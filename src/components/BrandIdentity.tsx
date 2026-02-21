@@ -1,0 +1,249 @@
+import { CheckCircle2, Circle, Rocket, Loader2, AlertCircle } from 'lucide-react';
+import type { BrandIdentity as BrandIdentityType } from '../types';
+import OpenAI from 'openai';
+import { useState } from 'react';
+
+interface Props {
+  identity: BrandIdentityType;
+  onChange: (identity: BrandIdentityType) => void;
+  onAddTheme: (theme: string) => void;
+  onAddContentType: (type: string) => void;
+  apiKey: string;
+}
+
+export default function BrandIdentity({ identity, onChange, onAddTheme, onAddContentType, apiKey }: Props) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const update = (field: keyof BrandIdentityType, value: string) => {
+    onChange({ ...identity, [field]: value });
+  };
+
+  const updateEmpathy = (field: keyof BrandIdentityType['empathyMap'], value: string) => {
+    onChange({
+      ...identity,
+      empathyMap: { ...identity.empathyMap, [field]: value },
+    });
+  };
+
+  const handleLaunch = async () => {
+    if (!apiKey) { setError('Please set your OpenAI API key in Settings first.'); return; }
+    if (!identity.icp.trim()) { setError('Please define your ICP first.'); return; }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
+      const prompt = `Based on this Brand Identity:
+ICP: ${identity.icp}
+Positioning: ${identity.positioning}
+Tone: ${identity.tone}
+
+Suggest 5 Content Themes and 5 Content Types that would perfectly resonate with this ICP.
+Return a JSON object with "themes" (array of strings) and "types" (array of strings).`;
+
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: prompt }],
+        response_format: { type: 'json_object' }
+      });
+
+      const raw = response.choices[0].message.content ?? '{}';
+      const parsed: { themes: string[], types: string[] } = JSON.parse(raw);
+
+      if (parsed.themes) parsed.themes.forEach(t => onAddTheme(t));
+      if (parsed.types) parsed.types.forEach(t => onAddContentType(t));
+
+      alert('Strategy Launched! Themes and Content Types have been added to your Strategy Matrix.');
+    } catch (e) {
+      console.error(e);
+      setError('Failed to launch strategy. Check your API key.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const empathyFields: { label: string; key: keyof BrandIdentityType['empathyMap']; desc: string; color: string }[] = [
+    { label: 'Pains', key: 'pains', desc: 'What frustrates your audience daily?', color: 'rose' },
+    { label: 'Gains', key: 'gains', desc: 'What outcomes do they desire?', color: 'emerald' },
+    { label: 'Fears', key: 'fears', desc: 'What keeps them up at night?', color: 'amber' },
+    { label: 'Hopes', key: 'hopes', desc: 'What do they secretly dream about?', color: 'indigo' },
+  ];
+
+  const allValues = [
+    identity.icp,
+    identity.positioning,
+    identity.tone,
+    identity.empathyMap.pains,
+    identity.empathyMap.gains,
+    identity.empathyMap.fears,
+    identity.empathyMap.hopes,
+  ];
+  const filled = allValues.filter(v => v.trim().length > 0).length;
+  const pct = Math.round((filled / allValues.length) * 100);
+
+  return (
+    <div className="p-6 max-w-4xl mx-auto space-y-8">
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Brand Identity</h1>
+          <p className="text-slate-500 text-sm mt-1">The strategic foundation for all AI-generated content.</p>
+        </div>
+        <div className="flex flex-col items-end gap-3">
+          <div className="text-right">
+            <div className="flex items-center gap-2 justify-end mb-1">
+              {pct === 100
+                ? <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                : <Circle className="w-4 h-4 text-slate-300" />
+              }
+              <span className={`text-sm font-semibold ${pct === 100 ? 'text-emerald-600' : 'text-slate-500'}`}>
+                {pct === 100 ? 'Identity Ready' : `${pct}% complete`}
+              </span>
+            </div>
+            <div className="w-32 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{ width: `${pct}%`, backgroundColor: pct === 100 ? '#059669' : '#4f46e5' }}
+              />
+            </div>
+          </div>
+          <button
+            onClick={handleLaunch}
+            disabled={loading || !identity.icp.trim()}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-all shadow-sm shadow-indigo-100"
+          >
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Rocket className="w-4 h-4" />}
+            {loading ? 'Launching System...' : 'Launch Strategy System'}
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="bg-rose-50 border border-rose-200 rounded-xl px-4 py-3 flex items-center gap-3 text-sm text-rose-700">
+          <AlertCircle className="w-5 h-5 shrink-0" />
+          {error}
+        </div>
+      )}
+
+      {/* Core fields */}
+      <section className="bg-white rounded-xl border border-slate-200 p-6 space-y-5">
+        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Core Definition</h2>
+        <FormField
+          label="Ideal Customer Profile (ICP)"
+          placeholder="e.g. Early-stage founders aged 25-35, building SaaS products, frustrated by marketing..."
+          value={identity.icp}
+          onChange={v => update('icp', v)}
+          rows={3}
+        />
+        <FormField
+          label="Brand Positioning"
+          placeholder="e.g. The no-fluff content system for operators who'd rather ship than talk..."
+          value={identity.positioning}
+          onChange={v => update('positioning', v)}
+          rows={2}
+        />
+        <FormField
+          label="Voice & Tone"
+          placeholder="e.g. Direct, data-driven, slightly provocative. Never preachy. Always actionable..."
+          value={identity.tone}
+          onChange={v => update('tone', v)}
+          rows={2}
+        />
+      </section>
+
+      {/* Empathy Map */}
+      <section className="bg-white rounded-xl border border-slate-200 p-6">
+        <div className="mb-5">
+          <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Empathy Map</h2>
+          <p className="text-xs text-slate-400 mt-1">This 4-quadrant data is injected directly into every AI generation.</p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {empathyFields.map(({ label, key, desc, color }) => (
+            <EmpathyQuadrant
+              key={key}
+              label={label}
+              desc={desc}
+              color={color}
+              value={identity.empathyMap[key]}
+              onChange={v => updateEmpathy(key, v)}
+            />
+          ))}
+        </div>
+      </section>
+
+      {/* Completion checklist */}
+      <section className="bg-slate-50 rounded-xl border border-slate-200 p-5">
+        <h2 className="text-sm font-semibold text-slate-700 mb-3">Completion Checklist</h2>
+        <ul className="space-y-2">
+          {[
+            { label: 'ICP defined', done: identity.icp.trim().length > 0 },
+            { label: 'Positioning articulated', done: identity.positioning.trim().length > 0 },
+            { label: 'Voice & Tone set', done: identity.tone.trim().length > 0 },
+            { label: 'Pains mapped', done: identity.empathyMap.pains.trim().length > 0 },
+            { label: 'Gains mapped', done: identity.empathyMap.gains.trim().length > 0 },
+            { label: 'Fears mapped', done: identity.empathyMap.fears.trim().length > 0 },
+            { label: 'Hopes mapped', done: identity.empathyMap.hopes.trim().length > 0 },
+          ].map(({ label, done }) => (
+            <li key={label} className="flex items-center gap-2 text-sm">
+              {done
+                ? <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                : <Circle className="w-4 h-4 text-slate-300 shrink-0" />
+              }
+              <span className={done ? 'text-slate-700' : 'text-slate-400'}>{label}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </div>
+  );
+}
+
+function FormField({
+  label, placeholder, value, onChange, rows = 3,
+}: {
+  label: string; placeholder: string; value: string;
+  onChange: (v: string) => void; rows?: number;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-slate-700 mb-1.5">{label}</label>
+      <textarea
+        rows={rows}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm text-slate-900 placeholder-slate-400 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-shadow"
+      />
+    </div>
+  );
+}
+
+function EmpathyQuadrant({
+  label, desc, color, value, onChange,
+}: {
+  label: string; desc: string; color: string; value: string; onChange: (v: string) => void;
+}) {
+  const colorMap: Record<string, { bg: string; border: string; badge: string; text: string }> = {
+    rose: { bg: 'bg-rose-50', border: 'border-rose-200', badge: 'bg-rose-100 text-rose-700', text: 'text-rose-600' },
+    emerald: { bg: 'bg-emerald-50', border: 'border-emerald-200', badge: 'bg-emerald-100 text-emerald-700', text: 'text-emerald-600' },
+    amber: { bg: 'bg-amber-50', border: 'border-amber-200', badge: 'bg-amber-100 text-amber-700', text: 'text-amber-600' },
+    indigo: { bg: 'bg-indigo-50', border: 'border-indigo-200', badge: 'bg-indigo-100 text-indigo-700', text: 'text-indigo-600' },
+  };
+  const c = colorMap[color];
+  return (
+    <div className={`rounded-lg border p-4 ${c.bg} ${c.border}`}>
+      <div className="flex items-center justify-between mb-2">
+        <span className={`text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${c.badge}`}>{label}</span>
+      </div>
+      <p className={`text-xs mb-2 ${c.text}`}>{desc}</p>
+      <textarea
+        rows={3}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={`Describe your audience's ${label.toLowerCase()}...`}
+        className="w-full px-3 py-2 rounded-lg border border-white bg-white text-sm text-slate-900 placeholder-slate-400 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-shadow"
+      />
+    </div>
+  );
+}
