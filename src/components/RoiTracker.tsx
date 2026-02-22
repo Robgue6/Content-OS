@@ -270,6 +270,11 @@ function CampaignDetail({ campaign, entries, granularity, onGranularityChange, o
         </div>
       )}
 
+      {/* Growth Projection */}
+      {entries.length > 0 && (
+        <GrowthProjection entries={entries} />
+      )}
+
       {/* Entry log */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
@@ -522,6 +527,80 @@ function AddEntryModal({ campaignId, onClose, onSave }: {
             className="flex-1 px-4 py-2 text-sm font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50">
             {saving ? 'Saving...' : 'Add Entry'}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Growth Projection ──────────────────────────────────────────────────── */
+
+function GrowthProjection({ entries }: { entries: RoiEntry[] }) {
+  const [days, setDays] = useState<7 | 30 | 90>(7);
+
+  const n = entries.length;
+  const totalSpend = entries.reduce((s, e) => s + e.spend, 0);
+  const totalFollowers = entries.reduce((s, e) => s + e.followersGained, 0);
+  const avgDailySpend = n > 0 ? totalSpend / n : 0;
+  const avgDailyFollowers = n > 0 ? totalFollowers / n : 0;
+
+  // Cumulative actual followers by day index (sorted)
+  const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+  const actualByDay: Record<number, number> = {};
+  let cum = 0;
+  sorted.forEach((e, i) => { cum += e.followersGained; actualByDay[i + 1] = cum; });
+
+  const chartData = Array.from({ length: days }, (_, i) => {
+    const day = i + 1;
+    return {
+      day,
+      Projected: Math.round(avgDailyFollowers * day),
+      Actual: actualByDay[day] ?? null,
+    };
+  });
+
+  const totalBudget = Math.round(avgDailySpend * days);
+  const projectedFollowers = Math.round(avgDailyFollowers * days);
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-slate-700">Growth Projection</h3>
+        <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs font-medium">
+          {([7, 30, 90] as const).map(d => (
+            <button key={d} onClick={() => setDays(d)}
+              className={`px-3 py-1.5 transition-colors ${days === d ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+            >
+              {d}D
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <ResponsiveContainer width="100%" height={200}>
+        <LineChart data={chartData} margin={{ left: -20, right: 10 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+          <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#94a3b8' }}
+            label={{ value: 'Duration (Days)', position: 'insideBottomRight', offset: -4, fontSize: 11, fill: '#94a3b8' }}
+          />
+          <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} />
+          <Tooltip contentStyle={{ border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 12 }} />
+          <Legend wrapperStyle={{ fontSize: 12 }} />
+          <Line type="monotone" dataKey="Projected" stroke="#818cf8" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+          <Line type="monotone" dataKey="Actual" stroke="#059669" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+        </LineChart>
+      </ResponsiveContainer>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-indigo-50 rounded-xl border border-indigo-100 p-4">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-500 mb-1">Total Budget Forecast</p>
+          <p className="text-2xl font-bold text-indigo-700">€{totalBudget.toLocaleString()}</p>
+          <p className="text-xs text-indigo-400 mt-1">For {days} days @ €{avgDailySpend.toFixed(0)}/day</p>
+        </div>
+        <div className="bg-emerald-50 rounded-xl border border-emerald-100 p-4">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-500 mb-1">Projected Followers</p>
+          <p className="text-2xl font-bold text-emerald-700">{projectedFollowers.toLocaleString()}</p>
+          <p className="text-xs text-emerald-400 mt-1">~{Math.round(avgDailyFollowers)}/day avg</p>
         </div>
       </div>
     </div>
