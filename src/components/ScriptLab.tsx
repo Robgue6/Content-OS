@@ -12,7 +12,6 @@ interface Props {
   post: Post | null;
   existingScript?: Script;
   brandIdentity: BrandIdentity;
-  apiKey: string;
   posts: Post[];
   onClose: () => void;
   onSave: (script: Omit<Script, 'id' | 'createdAt' | 'updatedAt'>) => void;
@@ -27,7 +26,7 @@ interface ScriptSections {
 
 type PreviewMode = 'read' | 'teleprompter' | 'schedule';
 
-export default function ScriptLab({ post, existingScript, brandIdentity, apiKey, posts, onClose, onSave, onSchedule }: Props) {
+export default function ScriptLab({ post, existingScript, brandIdentity, posts, onClose, onSave, onSchedule }: Props) {
   const [sections, setSections] = useState<ScriptSections>({
     hook: existingScript?.hook ?? '',
     body: existingScript?.body ?? '',
@@ -95,12 +94,13 @@ export default function ScriptLab({ post, existingScript, brandIdentity, apiKey,
   if (!post) return null;
 
   const generate = async () => {
-    if (!apiKey) { setError('No API key set. Go to Settings to add your Gemini API key.'); return; }
+    const orKey = import.meta.env.VITE_OPENROUTER_API_KEY as string;
+    if (!orKey) { setError('OpenRouter API key is not configured.'); return; }
     setLoading(true); setError('');
     try {
-      const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
+      const openai = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: orKey, dangerouslyAllowBrowser: true });
       const response = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'arcee-ai/trinity-large-preview:free',
         messages: [
           { role: 'system', content: buildSystem(brandIdentity) },
           { role: 'user', content: buildPrompt(post, brandIdentity) }

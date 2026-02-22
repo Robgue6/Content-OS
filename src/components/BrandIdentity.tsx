@@ -8,10 +8,9 @@ interface Props {
   onChange: (identity: BrandIdentityType) => void;
   onAddTheme: (theme: string) => void;
   onAddContentType: (type: string) => void;
-  apiKey: string;
 }
 
-export default function BrandIdentity({ identity, onChange, onAddTheme, onAddContentType, apiKey }: Props) {
+export default function BrandIdentity({ identity, onChange, onAddTheme, onAddContentType }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -27,14 +26,15 @@ export default function BrandIdentity({ identity, onChange, onAddTheme, onAddCon
   };
 
   const handleLaunch = async () => {
-    if (!apiKey) { setError('Please set your OpenAI API key in Settings first.'); return; }
+    const orKey = import.meta.env.VITE_OPENROUTER_API_KEY as string;
+    if (!orKey) { setError('OpenRouter API key is not configured.'); return; }
     if (!identity.icp.trim()) { setError('Please define your ICP first.'); return; }
 
     setLoading(true);
     setError('');
 
     try {
-      const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
+      const openai = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: orKey, dangerouslyAllowBrowser: true });
       const prompt = `Based on this Brand Identity:
 ICP: ${identity.icp}
 Positioning: ${identity.positioning}
@@ -44,7 +44,7 @@ Suggest 5 Content Themes and 5 Content Types that would perfectly resonate with 
 Return a JSON object with "themes" (array of strings) and "types" (array of strings).`;
 
       const response = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'arcee-ai/trinity-large-preview:free',
         messages: [{ role: 'user', content: prompt }],
         response_format: { type: 'json_object' }
       });

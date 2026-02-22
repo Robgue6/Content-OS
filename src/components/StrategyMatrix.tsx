@@ -28,14 +28,13 @@ interface Props {
   onDeleteIdea: (id: string) => void;
   onOpenLab: (postId: string) => void;
   onAddAndOpenLab: (post: Omit<Post, 'id'>) => void;
-  apiKey: string;
 }
 
 type PlanTarget = { title: string; theme: string; type: string; openLabAfter: boolean };
 
 export default function StrategyMatrix({
   state, onAddTheme, onRemoveTheme, onAddContentType, onRemoveContentType,
-  onPlanPost, onAddIdea, onUpdateIdea, onDeleteIdea, onOpenLab, onAddAndOpenLab, apiKey,
+  onPlanPost, onAddIdea, onUpdateIdea, onDeleteIdea, onOpenLab, onAddAndOpenLab,
 }: Props) {
   const { themes, contentTypes, brandIdentity, matrixIdeas, aiEnabled, posts, scripts } = state;
   const [loadingCells, setLoadingCells] = useState<Record<string, boolean>>({});
@@ -58,17 +57,18 @@ export default function StrategyMatrix({
     scripts.some(s => s.postId === postId && (s.hook || s.body || s.cta));
 
   const generateIdeas = async (theme: string, type: string) => {
-    if (!apiKey) { alert('Please set your Gemini API key in Settings first.'); return; }
+    const orKey = import.meta.env.VITE_OPENROUTER_API_KEY as string;
+    if (!orKey) { alert('OpenRouter API key is not configured.'); return; }
     const key = cellKey(theme, type);
     setLoadingCells(prev => ({ ...prev, [key]: true }));
     try {
-      const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
+      const openai = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: orKey, dangerouslyAllowBrowser: true });
       const prompt = `Generate 3 punchy, viral-ready short-form video TITLES for a "${type}" format video about the theme "${theme}".
 Return a JSON object with a "titles" key containing an array of 3 strings.
 Example: {"titles": ["Title 1", "Title 2", "Title 3"]}`;
 
       const response = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'arcee-ai/trinity-large-preview:free',
         messages: [
           { role: 'system', content: buildSystemContext(brandIdentity) },
           { role: 'user', content: prompt }
@@ -88,12 +88,13 @@ Example: {"titles": ["Title 1", "Title 2", "Title 3"]}`;
   };
 
   const generateConcepts = async (idea: { id: string; title: string }) => {
-    if (!apiKey) { alert('Please set your OpenAI API key in Settings first.'); return; }
+    const orKey = import.meta.env.VITE_OPENROUTER_API_KEY as string;
+    if (!orKey) { alert('OpenRouter API key is not configured.'); return; }
     setLoadingConcepts(true);
     setConceptsTarget(idea);
     setConcepts([]);
     try {
-      const openai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true });
+      const openai = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: orKey, dangerouslyAllowBrowser: true });
       const prompt = `Based on this Brand Identity:
 ICP: ${brandIdentity.icp}
 Tone: ${brandIdentity.tone}
@@ -104,7 +105,7 @@ Generate 3 unique and strategic "Script Concepts" or "Strategic Angles" for this
 Return a JSON object with a "concepts" key containing an array of 3 strings. Each string should be 1-2 sentences explaining the angle.`;
 
       const response = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'arcee-ai/trinity-large-preview:free',
         messages: [{ role: 'user', content: prompt }],
         response_format: { type: 'json_object' }
       });

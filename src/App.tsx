@@ -54,7 +54,6 @@ export default function App() {
   const [themes, setThemes] = useState<string[]>(['Growth', 'Mindset', 'Tools']);
   const [contentTypes, setContentTypes] = useState<string[]>(['Tutorial', 'Story', 'Listicle', 'Hot Take']);
   const [aiEnabled, setAiEnabledState] = useState(false);
-  const [openaiApiKey, setOpenaiApiKey] = useState('');
   const [posts, setPosts] = useState<Post[]>([]);
   const [scripts, setScripts] = useState<Script[]>([]);
   const [matrixIdeas, setMatrixIdeas] = useState<MatrixIdea[]>([]);
@@ -78,7 +77,6 @@ export default function App() {
         setThemes(profile.themes.length > 0 ? profile.themes : ['Growth', 'Mindset', 'Tools']);
         setContentTypes(profile.content_types.length > 0 ? profile.content_types : ['Tutorial', 'Story', 'Listicle', 'Hot Take']);
         setAiEnabledState(profile.ai_enabled);
-        setOpenaiApiKey(profile.gemini_api_key ?? '');
       }
       setPosts(postsData);
       setScripts(scriptsData);
@@ -121,11 +119,6 @@ export default function App() {
     setAiEnabledState(enabled);
     if (user) await db.updateProfile(user.id, { ai_enabled: enabled });
   };
-  const saveApiKey = async (key: string) => {
-    setOpenaiApiKey(key);
-    if (user) await db.updateProfile(user.id, { gemini_api_key: key });
-  };
-
   // ── Posts ────────────────────────────────────────────────────────────────
   const addPost = async (post: Omit<Post, 'id'>) => {
     if (!user) return;
@@ -396,8 +389,6 @@ export default function App() {
         <main className="flex-1 overflow-y-auto">
           {showSettings ? (
             <Settings
-              apiKey={openaiApiKey}
-              onApiKeyChange={saveApiKey}
               aiEnabled={aiEnabled}
               onAiEnabledChange={setAiEnabled}
               userEmail={user?.email ?? ''}
@@ -413,7 +404,6 @@ export default function App() {
                   onChange={updateBrandIdentity}
                   onAddTheme={addTheme}
                   onAddContentType={addContentType}
-                  apiKey={openaiApiKey}
                 />
               )}
               {activeTab === 'matrix' && (
@@ -436,7 +426,6 @@ export default function App() {
                       setScriptLabPostId(created.id);
                     }
                   }}
-                  apiKey={openaiApiKey}
                 />
               )}
               {activeTab === 'calendar' && (
@@ -473,7 +462,6 @@ export default function App() {
           post={activePost}
           existingScript={activeScript}
           brandIdentity={brandIdentity}
-          apiKey={openaiApiKey}
           posts={posts}
           onClose={closeLab}
           onSave={saveScript}
