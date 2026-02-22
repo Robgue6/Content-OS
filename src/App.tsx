@@ -13,6 +13,7 @@ import ScriptLab from './components/ScriptLab';
 import Settings from './components/Settings';
 import RoiTracker from './components/RoiTracker';
 import AuthPage from './components/auth/AuthPage';
+import LandingPage from './components/LandingPage';
 
 import { useAuth } from './hooks/useAuth';
 import { supabase } from './lib/supabase';
@@ -39,6 +40,7 @@ const NAV_ITEMS: { tab: NavTab; label: string; icon: React.ReactNode }[] = [
 export default function App() {
   const { session, user, loading: authLoading } = useAuth();
 
+  const [showAuth, setShowAuth] = useState(false);
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
   const [showSettings, setShowSettings] = useState(false);
   const [scriptLabPostId, setScriptLabPostId] = useState<string | null>(null);
@@ -223,7 +225,10 @@ export default function App() {
       </div>
     );
   }
-  if (!session) return <AuthPage />;
+  if (!session) {
+    if (showAuth) return <AuthPage onBack={() => setShowAuth(false)} />;
+    return <LandingPage onGetStarted={() => setShowAuth(true)} onSignIn={() => setShowAuth(true)} />;
+  }
 
   // ── Sidebar shared content ────────────────────────────────────────────────
   const sidebarContent = (

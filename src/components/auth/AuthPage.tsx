@@ -1,8 +1,12 @@
 import { useState } from 'react';
-import { FlaskConical, Mail, Lock, Loader2, AlertCircle } from 'lucide-react';
+import { FlaskConical, Mail, Lock, Loader2, AlertCircle, ArrowLeft } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
-export default function AuthPage() {
+interface Props {
+  onBack?: () => void;
+}
+
+export default function AuthPage({ onBack }: Props) {
   const [tab, setTab] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -35,6 +39,17 @@ export default function AuthPage() {
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
+        {/* Back to landing */}
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-700 font-medium mb-6 transition-colors"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            Back
+          </button>
+        )}
+
         {/* Logo */}
         <div className="flex items-center justify-center gap-2.5 mb-8">
           <div className="w-9 h-9 bg-indigo-600 rounded-xl flex items-center justify-center shadow-md">
