@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { FlaskConical, Mail, Lock, Loader2, AlertCircle, ArrowLeft } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import * as analytics from '../../lib/analytics';
 
 interface Props {
   onBack?: () => void;
@@ -22,7 +23,12 @@ export default function AuthPage({ onBack }: Props) {
     setLoading(true);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
-    if (error) setError(error.message);
+    if (error) {
+      setError(error.message);
+      analytics.trackSignInFailed(email, error.message);
+    } else {
+      analytics.trackSignIn(email);
+    }
   };
 
   const handleSignup = async (e: React.FormEvent) => {
@@ -32,8 +38,13 @@ export default function AuthPage({ onBack }: Props) {
     setLoading(true);
     const { error } = await supabase.auth.signUp({ email, password });
     setLoading(false);
-    if (error) setError(error.message);
-    else setSuccess('Account created! Check your email to confirm, then log in.');
+    if (error) {
+      setError(error.message);
+      analytics.trackSignUpFailed(email, error.message);
+    } else {
+      analytics.trackSignUp(email);
+      setSuccess('Account created! Check your email to confirm, then log in.');
+    }
   };
 
   return (

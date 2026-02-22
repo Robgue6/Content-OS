@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Sparkles, LogOut, Languages } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import type { AppLanguage } from '../types';
+import * as analytics from '../lib/analytics';
 
 const LANGUAGES: { value: AppLanguage; label: string; flag: string }[] = [
   { value: 'en', label: 'English', flag: '🇬🇧' },
@@ -18,10 +19,21 @@ interface Props {
 }
 
 export default function Settings({ aiEnabled, onAiEnabledChange, language, onLanguageChange, userEmail }: Props) {
+  const handleAiToggle = () => {
+    const next = !aiEnabled;
+    analytics.trackAiGenerationToggled(next);
+    onAiEnabledChange(next);
+  };
+
+  const handleLanguageChange = (lang: AppLanguage) => {
+    analytics.trackLanguageChanged(language, lang);
+    onLanguageChange(lang);
+  };
   const [signingOut, setSigningOut] = useState(false);
 
   const signOut = async () => {
     setSigningOut(true);
+    analytics.trackSignOut();
     await supabase.auth.signOut();
   };
 
@@ -64,7 +76,7 @@ export default function Settings({ aiEnabled, onAiEnabledChange, language, onLan
           {LANGUAGES.map(lang => (
             <button
               key={lang.value}
-              onClick={() => onLanguageChange(lang.value)}
+              onClick={() => handleLanguageChange(lang.value)}
               className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border-2 text-sm font-medium transition-all ${
                 language === lang.value
                   ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
@@ -95,7 +107,7 @@ export default function Settings({ aiEnabled, onAiEnabledChange, language, onLan
             </p>
           </div>
           <button
-            onClick={() => onAiEnabledChange(!aiEnabled)}
+            onClick={handleAiToggle}
             className={`relative shrink-0 w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${aiEnabled ? 'bg-indigo-600' : 'bg-slate-200'
               }`}
             role="switch"

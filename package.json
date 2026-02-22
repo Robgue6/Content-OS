@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@amplitude/analytics-browser": "^2.35.2",
+    "@amplitude/plugin-session-replay-browser": "^1.25.14",
     "@google/genai": "^1.42.0",
     "@supabase/supabase-js": "^2.97.0",
     "@tailwindcss/vite": "^4.2.0",

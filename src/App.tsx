@@ -18,6 +18,7 @@ import LandingPage from './components/LandingPage';
 import { useAuth } from './hooks/useAuth';
 import { supabase } from './lib/supabase';
 import * as db from './lib/db';
+import * as analytics from './lib/analytics';
 
 import type { AppState, NavTab, Post, Script, MatrixIdea, RoiCampaign, RoiEntry, BrandIdentity as BrandIdentityType, AppLanguage } from './types';
 
@@ -61,6 +62,15 @@ export default function App() {
   const [roiCampaigns, setRoiCampaigns] = useState<RoiCampaign[]>([]);
   const [roiEntries, setRoiEntries] = useState<RoiEntry[]>([]);
 
+  // Identify / reset user in Amplitude on auth change
+  useEffect(() => {
+    if (user) {
+      analytics.identifyUser(user.id, user.email ?? '');
+    } else {
+      analytics.resetUser();
+    }
+  }, [user]);
+
   useEffect(() => {
     if (!user) return;
     setDataLoading(true);
@@ -92,30 +102,38 @@ export default function App() {
     setActiveTab(tab);
     setShowSettings(false);
     setMobileOpen(false);
+    analytics.trackPageViewed(tab);
   }, []);
 
-  const signOut = () => supabase.auth.signOut();
+  const signOut = () => {
+    analytics.trackSignOut();
+    supabase.auth.signOut();
+  };
 
   // ── Profile ──────────────────────────────────────────────────────────────
   const updateBrandIdentity = async (identity: BrandIdentityType) => {
     setBrandIdentity(identity);
     if (user) await db.updateProfile(user.id, { brand_identity: identity });
   };
-  const addTheme = async (theme: string) => {
+  const addTheme = async (theme: string, source: 'manual' | 'ai' = 'manual') => {
     const next = [...themes, theme]; setThemes(next);
     if (user) await db.updateProfile(user.id, { themes: next });
+    analytics.trackThemeAdded(theme, source);
   };
   const removeTheme = async (theme: string) => {
     const next = themes.filter(t => t !== theme); setThemes(next);
     if (user) await db.updateProfile(user.id, { themes: next });
+    analytics.trackThemeRemoved(theme);
   };
-  const addContentType = async (type: string) => {
+  const addContentType = async (type: string, source: 'manual' | 'ai' = 'manual') => {
     const next = [...contentTypes, type]; setContentTypes(next);
     if (user) await db.updateProfile(user.id, { content_types: next });
+    analytics.trackContentTypeAdded(type, source);
   };
   const removeContentType = async (type: string) => {
     const next = contentTypes.filter(t => t !== type); setContentTypes(next);
     if (user) await db.updateProfile(user.id, { content_types: next });
+    analytics.trackContentTypeRemoved(type);
   };
   const setAiEnabled = async (enabled: boolean) => {
     setAiEnabledState(enabled);
@@ -129,16 +147,26 @@ export default function App() {
   const addPost = async (post: Omit<Post, 'id'>) => {
     if (!user) return;
     const created = await db.insertPost(user.id, post);
-    if (created) setPosts(prev => [...prev, created]);
+    if (created) {
+      setPosts(prev => [...prev, created]);
+      analytics.trackPostCreated(post.theme, post.type, post.status);
+    }
   };
   const handleUpdatePost = async (id: string, patch: Partial<Post>) => {
+    const existing = posts.find(p => p.id === id);
     setPosts(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p));
     await db.updatePost(id, patch);
+    if (patch.status && existing && patch.status !== existing.status) {
+      analytics.trackPostStatusChanged(existing.status, patch.status);
+    } else {
+      analytics.trackPostUpdated(patch as Record<string, unknown>);
+    }
   };
   const handleDeletePost = async (id: string) => {
     setPosts(prev => prev.filter(p => p.id !== id));
     setScripts(prev => prev.filter(s => s.postId !== id));
     await db.deletePost(id);
+    analytics.trackPostDeleted();
   };
 
   // ── Scripts ──────────────────────────────────────────────────────────────
@@ -152,50 +180,74 @@ export default function App() {
     });
     setPosts(prev => prev.map(p => p.id === scriptData.postId ? { ...p, status: 'DRAFT' as const, scriptId: saved.id } : p));
     await db.updatePost(scriptData.postId, { status: 'DRAFT', scriptId: saved.id });
+    const wordCount = [scriptData.hook, scriptData.body, scriptData.cta].join(' ').trim().split(/\s+/).filter(Boolean).length;
+    analytics.trackScriptSaved(wordCount);
   };
 
   // ── Matrix Ideas ─────────────────────────────────────────────────────────
   const addIdea = async (idea: Omit<MatrixIdea, 'id'>) => {
     if (!user) return;
     const created = await db.insertMatrixIdea(user.id, idea);
-    if (created) setMatrixIdeas(prev => [...prev, created]);
+    if (created) {
+      setMatrixIdeas(prev => [...prev, created]);
+      analytics.trackIdeaAdded(idea.theme, idea.type);
+    }
   };
   const handleUpdateIdea = async (id: string, patch: Partial<MatrixIdea>) => {
+    const existing = matrixIdeas.find(i => i.id === id);
     setMatrixIdeas(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i));
     await db.updateMatrixIdea(id, patch);
+    if (patch.done === true && existing && !existing.done) {
+      analytics.trackIdeaCompleted(existing.theme, existing.type);
+    }
   };
   const handleDeleteIdea = async (id: string) => {
     setMatrixIdeas(prev => prev.filter(i => i.id !== id));
     await db.deleteMatrixIdea(id);
+    analytics.trackIdeaDeleted();
   };
 
   // ── ROI ──────────────────────────────────────────────────────────────────
   const addRoiCampaign = async (c: Omit<RoiCampaign, 'id' | 'createdAt'>) => {
     if (!user) return;
     const created = await db.insertRoiCampaign(user.id, c);
-    if (created) setRoiCampaigns(prev => [created, ...prev]);
+    if (created) {
+      setRoiCampaigns(prev => [created, ...prev]);
+      analytics.trackRoiCampaignCreated(c.platform);
+    }
   };
   const updateRoiCampaign = async (id: string, patch: Partial<Pick<RoiCampaign, 'status' | 'targetCostPerFollower' | 'platform'>>) => {
+    const existing = roiCampaigns.find(c => c.id === id);
     setRoiCampaigns(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c));
     await db.updateRoiCampaign(id, patch);
+    if (patch.status && existing && patch.status !== existing.status) {
+      analytics.trackRoiCampaignStatusChanged(existing.status, patch.status, existing.platform);
+    }
   };
   const deleteRoiCampaign = async (id: string) => {
+    const existing = roiCampaigns.find(c => c.id === id);
     setRoiCampaigns(prev => prev.filter(c => c.id !== id));
     setRoiEntries(prev => prev.filter(e => e.campaignId !== id));
     await db.deleteRoiCampaign(id);
+    analytics.trackRoiCampaignDeleted(existing?.platform ?? 'unknown');
   };
   const addRoiEntry = async (e: Omit<RoiEntry, 'id'>) => {
     if (!user) return;
     const created = await db.insertRoiEntry(user.id, e);
-    if (created) setRoiEntries(prev => [...prev, created]);
+    if (created) {
+      setRoiEntries(prev => [...prev, created]);
+      analytics.trackRoiEntryAdded(e.spend, e.followersGained);
+    }
   };
   const updateRoiEntry = async (id: string, patch: Partial<Omit<RoiEntry, 'id' | 'campaignId'>>) => {
     setRoiEntries(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e));
     await db.updateRoiEntry(id, patch);
+    analytics.trackRoiEntryUpdated();
   };
   const deleteRoiEntry = async (id: string) => {
     setRoiEntries(prev => prev.filter(e => e.id !== id));
     await db.deleteRoiEntry(id);
+    analytics.trackRoiEntryDeleted();
   };
 
   // ── Lab ──────────────────────────────────────────────────────────────────
@@ -204,6 +256,9 @@ export default function App() {
     setActiveTab('lab');
     setShowSettings(false);
     setMobileOpen(false);
+    const post = posts.find(p => p.id === postId);
+    const hasScript = scripts.some(s => s.postId === postId);
+    if (post) analytics.trackScriptLabOpened(post.theme, post.type, hasScript);
   };
   const closeLab = () => setScriptLabPostId(null);
   const activePost = scriptLabPostId ? posts.find(p => p.id === scriptLabPostId) ?? null : null;
@@ -426,6 +481,9 @@ export default function App() {
                     // Open lab overlay without navigating away from matrix
                     setScriptLabPostId(postId);
                     setShowSettings(false);
+                    const post = posts.find(p => p.id === postId);
+                    const hasScript = scripts.some(s => s.postId === postId);
+                    if (post) analytics.trackScriptLabOpened(post.theme, post.type, hasScript);
                   }}
                   onAddAndOpenLab={async (post) => {
                     if (!user) return;
@@ -433,6 +491,8 @@ export default function App() {
                     if (created) {
                       setPosts(prev => [...prev, created]);
                       setScriptLabPostId(created.id);
+                      analytics.trackPostCreated(post.theme, post.type, post.status);
+                      analytics.trackScriptLabOpened(post.theme, post.type, false);
                     }
                   }}
                 />

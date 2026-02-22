@@ -2,6 +2,7 @@ import { CheckCircle2, Circle, Rocket, Loader2, AlertCircle, FlaskConical, Quote
 import type { BrandIdentity as BrandIdentityType, AppLanguage } from '../types';
 import OpenAI from 'openai';
 import { useState } from 'react';
+import * as analytics from '../lib/analytics';
 
 const LANGUAGE_NAMES: Record<AppLanguage, string> = { en: 'English', es: 'Spanish', fr: 'French' };
 
@@ -37,8 +38,8 @@ async function tavilySearch(query: string, apiKey: string): Promise<TavilyRespon
 interface Props {
   identity: BrandIdentityType;
   onChange: (identity: BrandIdentityType) => void;
-  onAddTheme: (theme: string) => void;
-  onAddContentType: (type: string) => void;
+  onAddTheme: (theme: string, source?: 'manual' | 'ai') => void;
+  onAddContentType: (type: string, source?: 'manual' | 'ai') => void;
   language: AppLanguage;
 }
 
@@ -66,6 +67,7 @@ export default function BrandIdentity({ identity, onChange, onAddTheme, onAddCon
 
     setLoading(true);
     setError('');
+    analytics.trackLaunchStrategyStarted();
 
     try {
       const openai = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: orKey, dangerouslyAllowBrowser: true });
@@ -87,13 +89,15 @@ LANGUAGE: Write all output in ${LANGUAGE_NAMES[language]}.`;
       const raw = response.choices[0].message.content ?? '{}';
       const parsed: { themes: string[], types: string[] } = JSON.parse(raw);
 
-      if (parsed.themes) parsed.themes.forEach(t => onAddTheme(t));
-      if (parsed.types) parsed.types.forEach(t => onAddContentType(t));
+      if (parsed.themes) parsed.themes.forEach(t => onAddTheme(t, 'ai'));
+      if (parsed.types) parsed.types.forEach(t => onAddContentType(t, 'ai'));
 
+      analytics.trackLaunchStrategyCompleted(parsed.themes?.length ?? 0, parsed.types?.length ?? 0);
       alert('Strategy Launched! Themes and Content Types have been added to your Strategy Matrix.');
     } catch (e) {
       console.error(e);
       setError('Failed to launch strategy. Check your API key.');
+      analytics.trackLaunchStrategyFailed(String(e));
     } finally {
       setLoading(false);
     }
@@ -109,6 +113,7 @@ LANGUAGE: Write all output in ${LANGUAGE_NAMES[language]}.`;
     setResearchLoading(true);
     setResearchStep('');
     setError('');
+    analytics.trackDeepResearchStarted();
 
     try {
       // Step 1 — build targeted search queries from the ICP
@@ -201,6 +206,7 @@ CRITICAL: Return only valid JSON. No markdown code fences. No extra keys.`;
         verbatims: string[];
       } = JSON.parse(raw);
 
+      const verbatims = Array.isArray(parsed.verbatims) ? parsed.verbatims : identity.verbatims ?? [];
       onChange({
         ...identity,
         empathyMap: {
@@ -209,14 +215,16 @@ CRITICAL: Return only valid JSON. No markdown code fences. No extra keys.`;
           fears: parsed.fears ?? identity.empathyMap.fears,
           hopes: parsed.hopes ?? identity.empathyMap.hopes,
         },
-        verbatims: Array.isArray(parsed.verbatims) ? parsed.verbatims : identity.verbatims,
+        verbatims,
       });
+      analytics.trackDeepResearchCompleted(verbatims.length);
 
       setResearchStep('');
     } catch (e) {
       console.error(e);
       setError('Deep research failed. Check your API keys and try again.');
       setResearchStep('');
+      analytics.trackDeepResearchFailed(String(e));
     } finally {
       setResearchLoading(false);
     }

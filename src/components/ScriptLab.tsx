@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import OpenAI from 'openai';
 import type { Post, Script, BrandIdentity, AppLanguage } from '../types';
+import * as analytics from '../lib/analytics';
 
 const LANGUAGE_NAMES: Record<AppLanguage, string> = { en: 'English', es: 'Spanish', fr: 'French' };
 
@@ -99,6 +100,7 @@ export default function ScriptLab({ post, existingScript, brandIdentity, languag
   const generate = async () => {
     const orKey = import.meta.env.VITE_OPENROUTER_API_KEY as string;
     if (!orKey) { setError('OpenRouter API key is not configured.'); return; }
+    const isRegenerate = !!(sections.hook || sections.body || sections.cta);
     setLoading(true); setError('');
     try {
       const openai = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: orKey, dangerouslyAllowBrowser: true });
@@ -112,18 +114,26 @@ export default function ScriptLab({ post, existingScript, brandIdentity, languag
       });
       const raw = response.choices[0].message.content ?? '{}';
       const parsed: ScriptSections = JSON.parse(raw);
-      setSections({ hook: parsed.hook ?? '', body: parsed.body ?? '', cta: parsed.cta ?? '' });
+      const next = { hook: parsed.hook ?? '', body: parsed.body ?? '', cta: parsed.cta ?? '' };
+      setSections(next);
+      const wc = [next.hook, next.body, next.cta].join(' ').trim().split(/\s+/).filter(Boolean).length;
+      analytics.trackScriptGenerated(post.theme, post.type, wc, isRegenerate);
     } catch (e) {
       console.error(e);
       setError('Generation failed. Check your API key and try again.');
+      analytics.trackScriptGenerationFailed(String(e));
     } finally { setLoading(false); }
   };
 
-  const handleSave = () => onSave({ postId: post.id, ...sections });
+  const handleSave = () => {
+    onSave({ postId: post.id, ...sections });
+  };
 
   const copyAll = async () => {
     await navigator.clipboard.writeText(`HOOK:\n${sections.hook}\n\nVALUE DELIVERY:\n${sections.body}\n\nCTA:\n${sections.cta}`);
-    setCopied(true); setTimeout(() => setCopied(false), 2000);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+    analytics.trackScriptCopied();
   };
 
   const wordCount = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
@@ -341,7 +351,10 @@ export default function ScriptLab({ post, existingScript, brandIdentity, languag
                         >
                           <SkipBack className="w-4 h-4" />
                         </button>
-                        <button onClick={() => setPlaying(p => !p)}
+                        <button onClick={() => {
+                          if (!playing) analytics.trackTeleprompterStarted(speed);
+                          setPlaying(p => !p);
+                        }}
                           className={`flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold transition-colors ${playing ? 'bg-rose-500 hover:bg-rose-600 text-white' : 'bg-indigo-500 hover:bg-indigo-600 text-white'}`}
                         >
                           {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
@@ -419,6 +432,7 @@ function SchedulePanel({ post, allPosts, onSchedule }: {
     if (!postDate) return;
     setSaving(true);
     await onSchedule(postDate, filmDate || undefined);
+    analytics.trackScriptScheduled(postDate, !!filmDate);
     setSaved(true);
     setSaving(false);
   };
