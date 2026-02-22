@@ -4,7 +4,9 @@ import {
   Camera, Rocket, FlaskConical, Maximize2, Minimize2, Lightbulb,
 } from 'lucide-react';
 import OpenAI from 'openai';
-import type { AppState, BrandIdentity, MatrixIdea, Post } from '../types';
+import type { AppState, AppLanguage, BrandIdentity, MatrixIdea, Post } from '../types';
+
+const LANGUAGE_NAMES: Record<AppLanguage, string> = { en: 'English', es: 'Spanish', fr: 'French' };
 
 const HUES = [
   { bg: 'bg-violet-50', border: 'border-violet-200/60', text: 'text-violet-700', bar: 'bg-violet-400', glass: 'bg-violet-50/80' },
@@ -36,7 +38,7 @@ export default function StrategyMatrix({
   state, onAddTheme, onRemoveTheme, onAddContentType, onRemoveContentType,
   onPlanPost, onAddIdea, onUpdateIdea, onDeleteIdea, onOpenLab, onAddAndOpenLab,
 }: Props) {
-  const { themes, contentTypes, brandIdentity, matrixIdeas, aiEnabled, posts, scripts } = state;
+  const { themes, contentTypes, brandIdentity, matrixIdeas, aiEnabled, language, posts, scripts } = state;
   const [loadingCells, setLoadingCells] = useState<Record<string, boolean>>({});
   const [newTheme, setNewTheme] = useState('');
   const [newType, setNewType] = useState('');
@@ -70,7 +72,7 @@ Example: {"titles": ["Title 1", "Title 2", "Title 3"]}`;
       const response = await openai.chat.completions.create({
         model: 'arcee-ai/trinity-large-preview:free',
         messages: [
-          { role: 'system', content: buildSystemContext(brandIdentity) },
+          { role: 'system', content: buildSystemContext(brandIdentity, language) },
           { role: 'user', content: prompt }
         ],
         response_format: { type: 'json_object' }
@@ -102,7 +104,8 @@ Tone: ${brandIdentity.tone}
 And this specific video idea: "${idea.title}"
 
 Generate 3 unique and strategic "Script Concepts" or "Strategic Angles" for this video.
-Return a JSON object with a "concepts" key containing an array of 3 strings. Each string should be 1-2 sentences explaining the angle.`;
+Return a JSON object with a "concepts" key containing an array of 3 strings. Each string should be 1-2 sentences explaining the angle.
+LANGUAGE: Write all output in ${LANGUAGE_NAMES[language]}.`;
 
       const response = await openai.chat.completions.create({
         model: 'arcee-ai/trinity-large-preview:free',
@@ -654,9 +657,11 @@ function PlanModal({ title, theme, type, openLabAfter, onConfirm, onConfirmCalen
   );
 }
 
-function buildSystemContext(identity: BrandIdentity): string {
+function buildSystemContext(identity: BrandIdentity, language: AppLanguage): string {
   const { icp, empathyMap, positioning, tone } = identity;
   return `You are an expert short-form content strategist.
+
+LANGUAGE: Generate all content in ${LANGUAGE_NAMES[language]}. Do not use any other language.
 
 BRAND CONTEXT:
 - ICP: ${icp || 'Not defined'}

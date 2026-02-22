@@ -10,6 +10,7 @@ export interface ProfileRow {
   content_types: string[];
   ai_enabled: boolean;
   gemini_api_key: string | null;
+  language: string | null;
 }
 
 export async function fetchProfile(userId: string): Promise<ProfileRow | null> {

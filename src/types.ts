@@ -65,6 +65,8 @@ export interface RoiEntry {
 
 export type NavTab = 'dashboard' | 'identity' | 'matrix' | 'calendar' | 'lab' | 'roi';
 
+export type AppLanguage = 'en' | 'es' | 'fr';
+
 export interface AppState {
   brandIdentity: BrandIdentity;
   themes: string[];
@@ -75,6 +77,7 @@ export interface AppState {
   roiCampaigns: RoiCampaign[];
   roiEntries: RoiEntry[];
   aiEnabled: boolean;
+  language: AppLanguage;
   activeTab: NavTab;
   scriptLabPostId: string | null;
 }

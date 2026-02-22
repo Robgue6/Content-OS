@@ -1,14 +1,23 @@
 import { useState } from 'react';
-import { Sparkles, LogOut } from 'lucide-react';
+import { Sparkles, LogOut, Languages } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import type { AppLanguage } from '../types';
+
+const LANGUAGES: { value: AppLanguage; label: string; flag: string }[] = [
+  { value: 'en', label: 'English', flag: '🇬🇧' },
+  { value: 'es', label: 'Spanish', flag: '🇪🇸' },
+  { value: 'fr', label: 'French', flag: '🇫🇷' },
+];
 
 interface Props {
   aiEnabled: boolean;
   onAiEnabledChange: (enabled: boolean) => void;
+  language: AppLanguage;
+  onLanguageChange: (lang: AppLanguage) => void;
   userEmail: string;
 }
 
-export default function Settings({ aiEnabled, onAiEnabledChange, userEmail }: Props) {
+export default function Settings({ aiEnabled, onAiEnabledChange, language, onLanguageChange, userEmail }: Props) {
   const [signingOut, setSigningOut] = useState(false);
 
   const signOut = async () => {
@@ -40,6 +49,36 @@ export default function Settings({ aiEnabled, onAiEnabledChange, userEmail }: Pr
             {signingOut ? 'Signing out...' : 'Sign out'}
           </button>
         </div>
+      </div>
+
+      {/* AI Language */}
+      <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+        <div className="flex items-center gap-2 mb-1">
+          <Languages className="w-4 h-4 text-indigo-500" />
+          <h2 className="text-sm font-semibold text-slate-700">AI Output Language</h2>
+        </div>
+        <p className="text-xs text-slate-500 leading-relaxed">
+          All AI-generated scripts, ideas, and concepts will be written in the selected language.
+        </p>
+        <div className="flex gap-2">
+          {LANGUAGES.map(lang => (
+            <button
+              key={lang.value}
+              onClick={() => onLanguageChange(lang.value)}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border-2 text-sm font-medium transition-all ${
+                language === lang.value
+                  ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                  : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+              }`}
+            >
+              <span className="text-base">{lang.flag}</span>
+              {lang.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-indigo-600 font-medium">
+          Active: {LANGUAGES.find(l => l.value === language)?.flag} {LANGUAGES.find(l => l.value === language)?.label}
+        </p>
       </div>
 
       {/* AI Feature Flag */}

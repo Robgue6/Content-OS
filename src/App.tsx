@@ -19,7 +19,7 @@ import { useAuth } from './hooks/useAuth';
 import { supabase } from './lib/supabase';
 import * as db from './lib/db';
 
-import type { AppState, NavTab, Post, Script, MatrixIdea, RoiCampaign, RoiEntry, BrandIdentity as BrandIdentityType } from './types';
+import type { AppState, NavTab, Post, Script, MatrixIdea, RoiCampaign, RoiEntry, BrandIdentity as BrandIdentityType, AppLanguage } from './types';
 
 const DEFAULT_BRAND: BrandIdentityType = {
   icp: '',
@@ -54,6 +54,7 @@ export default function App() {
   const [themes, setThemes] = useState<string[]>(['Growth', 'Mindset', 'Tools']);
   const [contentTypes, setContentTypes] = useState<string[]>(['Tutorial', 'Story', 'Listicle', 'Hot Take']);
   const [aiEnabled, setAiEnabledState] = useState(false);
+  const [language, setLanguageState] = useState<AppLanguage>('en');
   const [posts, setPosts] = useState<Post[]>([]);
   const [scripts, setScripts] = useState<Script[]>([]);
   const [matrixIdeas, setMatrixIdeas] = useState<MatrixIdea[]>([]);
@@ -77,6 +78,7 @@ export default function App() {
         setThemes(profile.themes.length > 0 ? profile.themes : ['Growth', 'Mindset', 'Tools']);
         setContentTypes(profile.content_types.length > 0 ? profile.content_types : ['Tutorial', 'Story', 'Listicle', 'Hot Take']);
         setAiEnabledState(profile.ai_enabled);
+        setLanguageState((profile.language as AppLanguage) ?? 'en');
       }
       setPosts(postsData);
       setScripts(scriptsData);
@@ -118,6 +120,10 @@ export default function App() {
   const setAiEnabled = async (enabled: boolean) => {
     setAiEnabledState(enabled);
     if (user) await db.updateProfile(user.id, { ai_enabled: enabled });
+  };
+  const setLanguage = async (lang: AppLanguage) => {
+    setLanguageState(lang);
+    if (user) await db.updateProfile(user.id, { language: lang });
   };
   // ── Posts ────────────────────────────────────────────────────────────────
   const addPost = async (post: Omit<Post, 'id'>) => {
@@ -205,7 +211,7 @@ export default function App() {
 
   const appState: AppState = {
     brandIdentity, themes, contentTypes, posts, scripts, matrixIdeas,
-    roiCampaigns, roiEntries, aiEnabled, activeTab, scriptLabPostId,
+    roiCampaigns, roiEntries, aiEnabled, language, activeTab, scriptLabPostId,
   };
 
   // ── Derived ──────────────────────────────────────────────────────────────
@@ -391,6 +397,8 @@ export default function App() {
             <Settings
               aiEnabled={aiEnabled}
               onAiEnabledChange={setAiEnabled}
+              language={language}
+              onLanguageChange={setLanguage}
               userEmail={user?.email ?? ''}
             />
           ) : (
@@ -404,6 +412,7 @@ export default function App() {
                   onChange={updateBrandIdentity}
                   onAddTheme={addTheme}
                   onAddContentType={addContentType}
+                  language={language}
                 />
               )}
               {activeTab === 'matrix' && (
@@ -462,6 +471,7 @@ export default function App() {
           post={activePost}
           existingScript={activeScript}
           brandIdentity={brandIdentity}
+          language={language}
           posts={posts}
           onClose={closeLab}
           onSave={saveScript}

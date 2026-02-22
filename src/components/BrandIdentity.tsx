@@ -1,16 +1,19 @@
 import { CheckCircle2, Circle, Rocket, Loader2, AlertCircle } from 'lucide-react';
-import type { BrandIdentity as BrandIdentityType } from '../types';
+import type { BrandIdentity as BrandIdentityType, AppLanguage } from '../types';
 import OpenAI from 'openai';
 import { useState } from 'react';
+
+const LANGUAGE_NAMES: Record<AppLanguage, string> = { en: 'English', es: 'Spanish', fr: 'French' };
 
 interface Props {
   identity: BrandIdentityType;
   onChange: (identity: BrandIdentityType) => void;
   onAddTheme: (theme: string) => void;
   onAddContentType: (type: string) => void;
+  language: AppLanguage;
 }
 
-export default function BrandIdentity({ identity, onChange, onAddTheme, onAddContentType }: Props) {
+export default function BrandIdentity({ identity, onChange, onAddTheme, onAddContentType, language }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -41,7 +44,8 @@ Positioning: ${identity.positioning}
 Tone: ${identity.tone}
 
 Suggest 5 Content Themes and 5 Content Types that would perfectly resonate with this ICP.
-Return a JSON object with "themes" (array of strings) and "types" (array of strings).`;
+Return a JSON object with "themes" (array of strings) and "types" (array of strings).
+LANGUAGE: Write all output in ${LANGUAGE_NAMES[language]}.`;
 
       const response = await openai.chat.completions.create({
         model: 'arcee-ai/trinity-large-preview:free',

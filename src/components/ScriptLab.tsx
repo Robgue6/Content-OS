@@ -6,12 +6,15 @@ import {
   Camera, Rocket, CalendarCheck, AlertTriangle,
 } from 'lucide-react';
 import OpenAI from 'openai';
-import type { Post, Script, BrandIdentity } from '../types';
+import type { Post, Script, BrandIdentity, AppLanguage } from '../types';
+
+const LANGUAGE_NAMES: Record<AppLanguage, string> = { en: 'English', es: 'Spanish', fr: 'French' };
 
 interface Props {
   post: Post | null;
   existingScript?: Script;
   brandIdentity: BrandIdentity;
+  language: AppLanguage;
   posts: Post[];
   onClose: () => void;
   onSave: (script: Omit<Script, 'id' | 'createdAt' | 'updatedAt'>) => void;
@@ -26,7 +29,7 @@ interface ScriptSections {
 
 type PreviewMode = 'read' | 'teleprompter' | 'schedule';
 
-export default function ScriptLab({ post, existingScript, brandIdentity, posts, onClose, onSave, onSchedule }: Props) {
+export default function ScriptLab({ post, existingScript, brandIdentity, language, posts, onClose, onSave, onSchedule }: Props) {
   const [sections, setSections] = useState<ScriptSections>({
     hook: existingScript?.hook ?? '',
     body: existingScript?.body ?? '',
@@ -102,7 +105,7 @@ export default function ScriptLab({ post, existingScript, brandIdentity, posts, 
       const response = await openai.chat.completions.create({
         model: 'arcee-ai/trinity-large-preview:free',
         messages: [
-          { role: 'system', content: buildSystem(brandIdentity) },
+          { role: 'system', content: buildSystem(brandIdentity, language) },
           { role: 'user', content: buildPrompt(post, brandIdentity) }
         ],
         response_format: { type: 'json_object' }
@@ -564,8 +567,10 @@ function ScriptSection({ label, sublabel, color, value, onChange, placeholder, r
   );
 }
 
-function buildSystem(identity: BrandIdentity): string {
+function buildSystem(identity: BrandIdentity, language: AppLanguage): string {
   return `You are an elite short-form content scriptwriter specializing in TikTok, Reels, and Shorts.
+
+LANGUAGE: Write the entire script in ${LANGUAGE_NAMES[language]}. Do not use any other language.
 
 BRAND CONTEXT:
 - ICP: ${identity.icp || 'Not defined'}
