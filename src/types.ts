@@ -8,6 +8,7 @@ export interface BrandIdentity {
   };
   positioning: string;
   tone: string;
+  verbatims?: string[];
 }
 
 export type PostStatus = 'IDEA' | 'DRAFT' | 'SCHEDULED';
