@@ -275,7 +275,7 @@ export default function CompetitorIntel({
       const prompt = buildIntelPrompt(cleanHandle, topPosts, brandIdentity, themes, contentTypes);
 
       const aiResponse = await openai.chat.completions.create({
-        model: 'google/gemini-2.0-flash-exp:free',
+        model: 'arcee-ai/trinity-large-preview:free',
         messages: [
           { role: 'system', content: 'You are a strategic content analyst. Return only valid JSON, no markdown fences.' },
           { role: 'user', content: prompt },
