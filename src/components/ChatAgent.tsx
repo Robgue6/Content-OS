@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { X, Trash2, Send, Loader2, MessageCircle, ChevronDown } from 'lucide-react';
+import { X, Trash2, Send, Loader2, MessageCircle, ChevronDown, Maximize2, Minimize2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import type { ChatMessage, BrandIdentity, Post, MatrixIdea, AppLanguage } from '../types';
 import * as analytics from '../lib/analytics';
@@ -110,6 +110,7 @@ export default function ChatAgent({
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [expanded, setExpanded] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -177,7 +178,7 @@ export default function ChatAgent({
       {isOpen && (
         <div
           className="fixed bottom-6 right-6 z-50 flex flex-col rounded-2xl shadow-2xl bg-white border border-slate-200 overflow-hidden"
-          style={{ width: 380, height: 520 }}
+          style={{ width: expanded ? 600 : 380, height: expanded ? 700 : 520, transition: 'width 0.2s ease, height 0.2s ease' }}
         >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-indigo-600 to-violet-600 shrink-0">
@@ -192,6 +193,13 @@ export default function ChatAgent({
                 title="Clear history"
               >
                 <Trash2 className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => setExpanded(e => !e)}
+                className="p-1.5 rounded-lg text-indigo-200 hover:text-white hover:bg-white/20 transition-colors"
+                title={expanded ? 'Collapse' : 'Expand'}
+              >
+                {expanded ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
               </button>
               <button
                 onClick={onToggle}

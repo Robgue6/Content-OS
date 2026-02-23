@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FlaskConical, Loader2, CalendarDays, Grid3X3, TrendingUp, CheckCircle2, Circle } from 'lucide-react';
+import { FlaskConical, Loader2, CalendarDays, Grid3X3, TrendingUp, CheckCircle2, Circle, ChevronLeft, ChevronRight, Camera, Rocket } from 'lucide-react';
 import * as db from '../lib/db';
 import * as analytics from '../lib/analytics';
 import type { Post, MatrixIdea, RoiCampaign, RoiEntry } from '../types';
@@ -26,14 +26,41 @@ const SIGNAL_STYLES = {
   none: { bg: 'bg-slate-50', border: 'border-slate-200', text: 'text-slate-600', dot: 'bg-slate-300', label: 'No data yet' },
 };
 
-const STATUS_STYLES: Record<Post['status'], string> = {
-  IDEA: 'bg-slate-100 text-slate-600',
-  DRAFT: 'bg-indigo-100 text-indigo-700',
-  SCHEDULED: 'bg-emerald-100 text-emerald-700',
+type CalendarView = 'posting' | 'filming';
+
+const STATUS_COLORS: Record<Post['status'], { bg: string; text: string; dot: string }> = {
+  IDEA:      { bg: 'bg-slate-100',   text: 'text-slate-600',   dot: 'bg-slate-400' },
+  DRAFT:     { bg: 'bg-indigo-100',  text: 'text-indigo-700',  dot: 'bg-indigo-500' },
+  SCHEDULED: { bg: 'bg-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500' },
 };
 
 // ── Calendar Tab ─────────────────────────────────────────────────────────────
 function CalendarTab({ posts }: { posts: Post[] }) {
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [calView, setCalView] = useState<CalendarView>('posting');
+
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const toStr = (d: number) => `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  const today = new Date().toISOString().split('T')[0];
+  const monthName = currentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+
+  const getPostsForDay = (dateStr: string) =>
+    calView === 'filming'
+      ? posts.filter(p => p.filmingDate === dateStr)
+      : posts.filter(p => p.date === dateStr);
+
+  const getFilmingForDay = (dateStr: string) =>
+    calView === 'posting' ? posts.filter(p => p.filmingDate === dateStr) : [];
+
+  const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
+  const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
+
+  const postsWithFilming = posts.filter(p => p.filmingDate).length;
+  const postsScheduled = posts.filter(p => p.status === 'SCHEDULED').length;
+
   if (!posts.length) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-slate-400 space-y-2">
@@ -43,43 +70,151 @@ function CalendarTab({ posts }: { posts: Post[] }) {
     );
   }
 
-  // Group by YYYY-MM
-  const grouped = posts.reduce<Record<string, Post[]>>((acc, post) => {
-    const key = post.date.slice(0, 7);
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(post);
-    return acc;
-  }, {});
-
-  const sortedMonths = Object.keys(grouped).sort();
-
   return (
-    <div className="space-y-6">
-      {sortedMonths.map(month => {
-        const [y, m] = month.split('-');
-        const label = new Date(Number(y), Number(m) - 1).toLocaleString('default', { month: 'long', year: 'numeric' });
-        return (
-          <div key={month}>
-            <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">{label}</h3>
-            <div className="space-y-2">
-              {grouped[month].map(post => (
-                <div key={post.id} className="bg-white rounded-xl border border-slate-200 px-4 py-3 flex items-center gap-3">
-                  <div className="text-sm font-bold text-slate-400 w-6 shrink-0 text-center">
-                    {new Date(post.date).getUTCDate()}
+    <div className="space-y-4">
+      {/* Controls row */}
+      <div className="flex items-center gap-4 flex-wrap">
+        <div className="flex items-center gap-2">
+          <button onClick={prevMonth} className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
+            <ChevronLeft className="w-5 h-5 text-slate-600" />
+          </button>
+          <h2 className="text-lg font-semibold text-slate-800 min-w-[180px] text-center">{monthName}</h2>
+          <button onClick={nextMonth} className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
+            <ChevronRight className="w-5 h-5 text-slate-600" />
+          </button>
+        </div>
+
+        {/* View toggle */}
+        <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs font-semibold">
+          <button
+            onClick={() => setCalView('posting')}
+            className={`flex items-center gap-1.5 px-3 py-2 transition-colors ${calView === 'posting' ? 'bg-emerald-500 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            <Rocket className="w-3.5 h-3.5" /> Publishing
+          </button>
+          <button
+            onClick={() => setCalView('filming')}
+            className={`flex items-center gap-1.5 px-3 py-2 transition-colors ${calView === 'filming' ? 'bg-blue-500 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            <Camera className="w-3.5 h-3.5" /> Filming
+          </button>
+        </div>
+
+        {/* Legend */}
+        <div className="flex items-center gap-4 ml-2">
+          {calView === 'posting' ? (
+            (['IDEA', 'DRAFT', 'SCHEDULED'] as Post['status'][]).map(s => (
+              <div key={s} className="flex items-center gap-1.5 text-xs text-slate-500">
+                <span className={`w-2 h-2 rounded-full ${STATUS_COLORS[s].dot}`} />
+                {s}
+              </div>
+            ))
+          ) : (
+            <div className="flex items-center gap-4 text-xs text-slate-500">
+              <span className="flex items-center gap-1"><Camera className="w-3 h-3 text-blue-500" /> {postsWithFilming} with film date</span>
+              <span className="flex items-center gap-1"><Rocket className="w-3 h-3 text-emerald-500" /> {postsScheduled} scheduled</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Filming banner */}
+      {calView === 'filming' && (
+        <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5 text-sm text-blue-800">
+          <Camera className="w-4 h-4 text-blue-600 shrink-0" />
+          <span><strong>Filming view</strong> — showing when posts are planned to be recorded. Switch to Publishing to see go-live dates.</span>
+        </div>
+      )}
+
+      {/* Calendar grid */}
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div className="grid grid-cols-7 border-b border-slate-200">
+          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
+            <div key={d} className="text-xs font-semibold text-slate-500 text-center py-2 uppercase tracking-wider">{d}</div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7">
+          {Array.from({ length: firstDay }).map((_, i) => (
+            <div key={`empty-${i}`} className="border-b border-r border-slate-100 min-h-[100px] bg-slate-50/50" />
+          ))}
+          {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(day => {
+            const dateStr = toStr(day);
+            const dayPosts = getPostsForDay(dateStr);
+            const filmingIndicators = getFilmingForDay(dateStr);
+            const isToday = dateStr === today;
+            return (
+              <div key={day} className="border-b border-r border-slate-100 min-h-[100px] p-2">
+                <div className={`text-xs font-medium mb-1.5 w-6 h-6 flex items-center justify-center rounded-full ${isToday ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>
+                  {day}
+                </div>
+                {filmingIndicators.length > 0 && (
+                  <div className="mb-1 flex flex-wrap gap-1">
+                    {filmingIndicators.map(p => (
+                      <div key={`film-${p.id}`} className="flex items-center gap-0.5 bg-blue-50 border border-blue-200 rounded px-1 py-0.5 text-[9px] text-blue-700 font-medium">
+                        <Camera className="w-2.5 h-2.5" />
+                        <span className="truncate max-w-[60px]">{p.title}</span>
+                      </div>
+                    ))}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-900 truncate">{post.title}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">{post.theme} · {post.type}</p>
-                  </div>
-                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${STATUS_STYLES[post.status]}`}>
-                    {post.status}
+                )}
+                <div className="space-y-1">
+                  {dayPosts.map(post => {
+                    const c = STATUS_COLORS[post.status];
+                    const isFilmView = calView === 'filming';
+                    return (
+                      <div key={post.id} className={`text-xs rounded px-1.5 py-1 ${isFilmView ? 'bg-blue-50 text-blue-800 border border-blue-200' : `${c.bg} ${c.text}`}`}>
+                        <div className="flex items-center gap-1 min-w-0">
+                          {isFilmView && <Camera className="w-2.5 h-2.5 shrink-0 text-blue-500" />}
+                          <span className="leading-snug font-medium truncate">{post.title}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[9px] opacity-70 mt-0.5">
+                          <span>{post.type}</span>
+                          {!isFilmView && post.filmingDate && (
+                            <span className="flex items-center gap-0.5 text-blue-600 opacity-100">
+                              <Camera className="w-2 h-2" />{post.filmingDate}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* All posts list */}
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-100">
+          <h2 className="text-sm font-semibold text-slate-700">All Posts ({posts.length})</h2>
+        </div>
+        <div className="divide-y divide-slate-100">
+          {[...posts].sort((a, b) => a.date.localeCompare(b.date)).map(post => (
+            <div key={post.id} className="flex items-center gap-4 px-5 py-3">
+              <span className={`w-2 h-2 rounded-full shrink-0 ${STATUS_COLORS[post.status].dot}`} />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-slate-900 truncate">{post.title}</p>
+                <div className="flex items-center gap-3 mt-0.5">
+                  <p className="text-xs text-slate-400">{post.theme} · {post.type}</p>
+                  {post.filmingDate && (
+                    <span className="flex items-center gap-1 text-[11px] text-blue-600 font-medium">
+                      <Camera className="w-2.5 h-2.5" />{post.filmingDate}
+                    </span>
+                  )}
+                  <span className="flex items-center gap-1 text-[11px] text-emerald-600 font-medium">
+                    <Rocket className="w-2.5 h-2.5" />{post.date}
                   </span>
                 </div>
-              ))}
+              </div>
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${STATUS_COLORS[post.status].bg} ${STATUS_COLORS[post.status].text}`}>
+                {post.status}
+              </span>
             </div>
-          </div>
-        );
-      })}
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
