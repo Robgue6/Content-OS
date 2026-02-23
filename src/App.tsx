@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   LayoutDashboard, User, Grid3X3, CalendarDays, FlaskConical,
   Settings as SettingsIcon, Loader2, TrendingUp, LogOut,
-  ChevronLeft, ChevronRight, Menu, X,
+  ChevronLeft, ChevronRight, Menu, X, Telescope,
 } from 'lucide-react';
 
 import Dashboard from './components/Dashboard';
@@ -12,6 +12,7 @@ import ContentCalendar from './components/ContentCalendar';
 import ScriptLab from './components/ScriptLab';
 import Settings from './components/Settings';
 import RoiTracker from './components/RoiTracker';
+import CompetitorIntel from './components/CompetitorIntel';
 import ChatAgent from './components/ChatAgent';
 import SharedView from './components/SharedView';
 import AuthPage from './components/auth/AuthPage';
@@ -23,7 +24,7 @@ import { supabase } from './lib/supabase';
 import * as db from './lib/db';
 import * as analytics from './lib/analytics';
 
-import type { AppState, NavTab, Post, Script, MatrixIdea, RoiCampaign, RoiEntry, BrandIdentity as BrandIdentityType, AppLanguage, ChatMessage, ShareLink } from './types';
+import type { AppState, NavTab, Post, Script, MatrixIdea, RoiCampaign, RoiEntry, BrandIdentity as BrandIdentityType, AppLanguage, ChatMessage, ShareLink, CompetitorReport } from './types';
 
 const DEFAULT_BRAND: BrandIdentityType = {
   icp: '',
@@ -39,6 +40,7 @@ const NAV_ITEMS: { tab: NavTab; label: string; icon: React.ReactNode }[] = [
   { tab: 'calendar', label: 'Calendar', icon: <CalendarDays className="w-[18px] h-[18px]" /> },
   { tab: 'lab', label: 'Script Lab', icon: <FlaskConical className="w-[18px] h-[18px]" /> },
   { tab: 'roi', label: 'ROI', icon: <TrendingUp className="w-[18px] h-[18px]" /> },
+  { tab: 'intel', label: 'Intel', icon: <Telescope className="w-[18px] h-[18px]" /> },
 ];
 
 export default function App() {
@@ -69,6 +71,8 @@ export default function App() {
   const [aiAgentEnabled, setAiAgentEnabledState] = useState(false);
   const [chatAgentOpen, setChatAgentOpen] = useState(false);
   const [shareLink, setShareLink] = useState<ShareLink | null>(null);
+  const [competitorReports, setCompetitorReports] = useState<CompetitorReport[]>([]);
+  const [apifyApiKey, setApifyApiKeyState] = useState('');
 
   // Identify / reset user in Amplitude on auth change
   useEffect(() => {
@@ -91,7 +95,8 @@ export default function App() {
       db.fetchRoiEntries(user.id),
       db.fetchChatMessages(user.id),
       db.fetchShareLink(user.id),
-    ]).then(([profile, postsData, scriptsData, ideasData, campaignsData, entriesData, messagesData, shareLinkData]) => {
+      db.fetchCompetitorReports(user.id),
+    ]).then(([profile, postsData, scriptsData, ideasData, campaignsData, entriesData, messagesData, shareLinkData, reportsData]) => {
       if (profile) {
         setBrandIdentity(profile.brand_identity && Object.keys(profile.brand_identity).length > 0
           ? profile.brand_identity as BrandIdentityType : DEFAULT_BRAND);
@@ -100,6 +105,7 @@ export default function App() {
         setAiEnabledState(profile.ai_enabled);
         setAiAgentEnabledState(profile.ai_agent_enabled ?? false);
         setLanguageState((profile.language as AppLanguage) ?? 'en');
+        setApifyApiKeyState(profile.apify_api_key ?? '');
       }
       setPosts(postsData);
       setScripts(scriptsData);
@@ -108,6 +114,7 @@ export default function App() {
       setRoiEntries(entriesData);
       setChatMessages(messagesData);
       setShareLink(shareLinkData);
+      setCompetitorReports(reportsData);
     }).finally(() => setDataLoading(false));
   }, [user]);
 
@@ -226,6 +233,10 @@ export default function App() {
     setLanguageState(lang);
     if (user) await db.updateProfile(user.id, { language: lang });
   };
+  const setApifyApiKey = async (key: string) => {
+    setApifyApiKeyState(key);
+    if (user) await db.updateProfile(user.id, { apify_api_key: key });
+  };
   // ── Posts ────────────────────────────────────────────────────────────────
   const addPost = async (post: Omit<Post, 'id'>) => {
     if (!user) return;
@@ -333,6 +344,25 @@ export default function App() {
     analytics.trackRoiEntryDeleted();
   };
 
+  // ── Competitor Intel ──────────────────────────────────────────────────────
+  const addCompetitorReport = async (report: Omit<CompetitorReport, 'id' | 'createdAt'>) => {
+    if (!user) return;
+    const created = await db.insertCompetitorReport(user.id, report);
+    if (created) {
+      setCompetitorReports(prev => [created, ...prev]);
+      analytics.trackIntelAnalysisCompleted(
+        report.competitorHandle,
+        report.postsAnalyzed,
+        report.report.actionablePosts?.length ?? 0,
+      );
+    }
+  };
+  const deleteCompetitorReport = async (id: string) => {
+    setCompetitorReports(prev => prev.filter(r => r.id !== id));
+    await db.deleteCompetitorReport(id);
+    analytics.trackIntelReportDeleted();
+  };
+
   // ── Lab ──────────────────────────────────────────────────────────────────
   const openLab = (postId: string) => {
     setScriptLabPostId(postId);
@@ -350,7 +380,7 @@ export default function App() {
   const appState: AppState = {
     brandIdentity, themes, contentTypes, posts, scripts, matrixIdeas,
     roiCampaigns, roiEntries, aiEnabled, aiAgentEnabled, language, activeTab,
-    scriptLabPostId, chatMessages,
+    scriptLabPostId, chatMessages, competitorReports,
   };
 
   // ── Derived ──────────────────────────────────────────────────────────────
@@ -546,6 +576,8 @@ export default function App() {
               shareLink={shareLink}
               onGenerateShareLink={generateShareLink}
               onRevokeShareLink={revokeShareLink}
+              apifyApiKey={apifyApiKey}
+              onApifyApiKeyChange={setApifyApiKey}
             />
           ) : (
             <>
@@ -609,6 +641,20 @@ export default function App() {
                   onAddEntry={addRoiEntry}
                   onUpdateEntry={updateRoiEntry}
                   onDeleteEntry={deleteRoiEntry}
+                />
+              )}
+              {activeTab === 'intel' && (
+                <CompetitorIntel
+                  brandIdentity={brandIdentity}
+                  themes={themes}
+                  contentTypes={contentTypes}
+                  reports={competitorReports}
+                  apifyApiKey={apifyApiKey}
+                  language={language}
+                  onAddReport={addCompetitorReport}
+                  onDeleteReport={deleteCompetitorReport}
+                  onAddToMatrix={addIdea}
+                  onNavigateToMatrix={() => navigate('matrix')}
                 />
               )}
             </>

@@ -179,3 +179,20 @@ export const trackShareLinkRevoked = () =>
 
 export const trackSharedViewOpened = (token: string) =>
   amplitude.track('shared_view_opened', { token_prefix: token.slice(0, 8) });
+
+// ─── Competitor Intel ────────────────────────────────────────────────────────
+
+export const trackIntelAnalysisStarted = (handle: string) =>
+  amplitude.track('intel_analysis_started', { handle });
+
+export const trackIntelAnalysisCompleted = (handle: string, postsAnalyzed: number, ideasGenerated: number) =>
+  amplitude.track('intel_analysis_completed', { handle, posts_analyzed: postsAnalyzed, ideas_generated: ideasGenerated });
+
+export const trackIntelAnalysisFailed = (error: string) =>
+  amplitude.track('intel_analysis_failed', { error });
+
+export const trackIntelIdeaAdded = (theme: string, type: string) =>
+  amplitude.track('intel_idea_added_to_matrix', { theme, type });
+
+export const trackIntelReportDeleted = () =>
+  amplitude.track('intel_report_deleted');

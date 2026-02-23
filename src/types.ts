@@ -79,7 +79,7 @@ export interface ShareLink {
   createdAt: string;
 }
 
-export type NavTab = 'dashboard' | 'identity' | 'matrix' | 'calendar' | 'lab' | 'roi';
+export type NavTab = 'dashboard' | 'identity' | 'matrix' | 'calendar' | 'lab' | 'roi' | 'intel';
 
 export type AppLanguage = 'en' | 'es' | 'fr';
 
@@ -98,4 +98,67 @@ export interface AppState {
   activeTab: NavTab;
   scriptLabPostId: string | null;
   chatMessages: ChatMessage[];
+  competitorReports: CompetitorReport[];
+}
+
+// ── Competitor Intelligence ────────────────────────────────────────────────
+
+export interface CompetitorPost {
+  id: string;
+  shortCode: string;
+  url: string;
+  caption: string;
+  likesCount: number;
+  commentsCount: number;
+  videoViewCount: number;
+  timestamp: string;
+  type: string;
+  engagementScore: number;
+  comments: CompetitorComment[];
+}
+
+export interface CompetitorComment {
+  id: string;
+  text: string;
+  ownerUsername: string;
+  timestamp: string;
+}
+
+export interface IntelTactic {
+  tactic: string;
+  reasoning: string;
+  evidence: string;
+  icpAlignment: 'aligned' | 'neutral';
+}
+
+export interface IntelAvoidance {
+  pattern: string;
+  reason: string;
+  icpConflict: string;
+}
+
+export interface IntelActionablePost {
+  title: string;
+  hook: string;
+  why: string;
+  theme: string;
+  type: string;
+  angle: string;
+}
+
+export interface CompetitorReportData {
+  overallAnalysis: string;
+  audienceSignals: string[];
+  whatToDo: IntelTactic[];
+  whatNotToDo: IntelAvoidance[];
+  actionablePosts: IntelActionablePost[];
+}
+
+export interface CompetitorReport {
+  id: string;
+  competitorHandle: string;
+  postsAnalyzed: number;
+  topPosts: CompetitorPost[];
+  report: CompetitorReportData;
+  createdAt: string;
 }

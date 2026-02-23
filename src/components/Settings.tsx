@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Sparkles, LogOut, Languages, Link2, Check } from 'lucide-react';
+import { Sparkles, LogOut, Languages, Link2, Check, Telescope, Eye, EyeOff } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import type { AppLanguage, ShareLink } from '../types';
 import * as analytics from '../lib/analytics';
@@ -21,9 +21,11 @@ interface Props {
   shareLink: ShareLink | null;
   onGenerateShareLink: () => Promise<void>;
   onRevokeShareLink: () => Promise<void>;
+  apifyApiKey: string;
+  onApifyApiKeyChange: (key: string) => Promise<void>;
 }
 
-export default function Settings({ aiEnabled, onAiEnabledChange, aiAgentEnabled, onAiAgentEnabledChange, language, onLanguageChange, userEmail, shareLink, onGenerateShareLink, onRevokeShareLink }: Props) {
+export default function Settings({ aiEnabled, onAiEnabledChange, aiAgentEnabled, onAiAgentEnabledChange, language, onLanguageChange, userEmail, shareLink, onGenerateShareLink, onRevokeShareLink, apifyApiKey, onApifyApiKeyChange }: Props) {
   const handleAiToggle = () => {
     const next = !aiEnabled;
     analytics.trackAiGenerationToggled(next);
@@ -41,6 +43,18 @@ export default function Settings({ aiEnabled, onAiEnabledChange, aiAgentEnabled,
   };
   const [signingOut, setSigningOut] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [apifyKeyDraft, setApifyKeyDraft] = useState(apifyApiKey);
+  const [apifyKeySaving, setApifyKeySaving] = useState(false);
+  const [apifyKeyVisible, setApifyKeyVisible] = useState(false);
+  const [apifyKeySaved, setApifyKeySaved] = useState(false);
+
+  const saveApifyKey = async () => {
+    setApifyKeySaving(true);
+    await onApifyApiKeyChange(apifyKeyDraft.trim());
+    setApifyKeySaving(false);
+    setApifyKeySaved(true);
+    setTimeout(() => setApifyKeySaved(false), 2000);
+  };
   const shareUrl = shareLink ? `${window.location.origin}?share=${shareLink.token}` : '';
   const copyShareUrl = async () => {
     if (!shareUrl) return;
@@ -227,6 +241,49 @@ export default function Settings({ aiEnabled, onAiEnabledChange, aiAgentEnabled,
             <Link2 className="w-4 h-4" /> Generate share link
           </button>
         )}
+      </div>
+
+      {/* Competitor Intel — Apify Token */}
+      <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <Telescope className="w-4 h-4 text-orange-500" />
+          <h2 className="text-sm font-semibold text-slate-700">Competitor Intel</h2>
+        </div>
+        <p className="text-xs text-slate-500 leading-relaxed">
+          Enter your Apify API token to enable the Competitor Intel tab. Apify scrapes
+          Instagram posts and comments so the AI can generate an actionable strategy
+          tailored to your brand. Get a free token at{' '}
+          <span className="text-orange-600 font-medium">apify.com</span>.
+        </p>
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <input
+              type={apifyKeyVisible ? 'text' : 'password'}
+              value={apifyKeyDraft}
+              onChange={e => setApifyKeyDraft(e.target.value)}
+              placeholder="apify_api_xxxxxxxxxxxxxxxxxxxx"
+              className="w-full text-sm bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 pr-10 outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent font-mono"
+            />
+            <button
+              type="button"
+              onClick={() => setApifyKeyVisible(v => !v)}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+            >
+              {apifyKeyVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+          <button
+            onClick={saveApifyKey}
+            disabled={apifyKeySaving || apifyKeyDraft.trim() === apifyApiKey}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 transition-colors disabled:opacity-50 shrink-0"
+          >
+            {apifyKeySaved ? <><Check className="w-4 h-4" /> Saved</> : apifyKeySaving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+        <div className={`flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg ${apifyApiKey ? 'bg-orange-50 text-orange-700' : 'bg-slate-50 text-slate-500'}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${apifyApiKey ? 'bg-orange-500' : 'bg-slate-300'}`} />
+          {apifyApiKey ? 'Apify connected — Competitor Intel is active' : 'No token — Competitor Intel tab requires this'}
+        </div>
       </div>
 
       <div className="bg-slate-50 rounded-xl border border-slate-200 p-5">

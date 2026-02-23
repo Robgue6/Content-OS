@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import type { BrandIdentity, Post, Script, MatrixIdea, ChatMessage, ShareLink } from '../types';
+import type { BrandIdentity, Post, Script, MatrixIdea, ChatMessage, ShareLink, CompetitorReport, CompetitorPost, CompetitorReportData } from '../types';
 
 // ── Profile ───────────────────────────────────────────────────────────────
 
@@ -11,6 +11,7 @@ export interface ProfileRow {
   ai_enabled: boolean;
   ai_agent_enabled: boolean;
   gemini_api_key: string | null;
+  apify_api_key: string | null;
   language: string | null;
 }
 
@@ -319,6 +320,63 @@ export async function insertShareLink(userId: string): Promise<ShareLink | null>
 export async function deleteShareLink(id: string): Promise<void> {
   const { error } = await supabase.from('share_links').delete().eq('id', id);
   if (error) console.error('deleteShareLink', error);
+}
+
+// ── Competitor Reports ─────────────────────────────────────────────────────
+
+type CompetitorReportRow = {
+  id: string;
+  user_id: string;
+  competitor_handle: string;
+  posts_analyzed: number;
+  top_posts: unknown;
+  report: unknown;
+  created_at: string;
+};
+
+function rowToCompetitorReport(row: CompetitorReportRow): CompetitorReport {
+  return {
+    id: row.id,
+    competitorHandle: row.competitor_handle,
+    postsAnalyzed: row.posts_analyzed,
+    topPosts: row.top_posts as CompetitorPost[],
+    report: row.report as CompetitorReportData,
+    createdAt: row.created_at,
+  };
+}
+
+export async function fetchCompetitorReports(userId: string): Promise<CompetitorReport[]> {
+  const { data, error } = await supabase
+    .from('competitor_reports')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+  if (error) { console.error('fetchCompetitorReports', error); return []; }
+  return (data as CompetitorReportRow[]).map(rowToCompetitorReport);
+}
+
+export async function insertCompetitorReport(
+  userId: string,
+  report: Omit<CompetitorReport, 'id' | 'createdAt'>
+): Promise<CompetitorReport | null> {
+  const { data, error } = await supabase
+    .from('competitor_reports')
+    .insert({
+      user_id: userId,
+      competitor_handle: report.competitorHandle,
+      posts_analyzed: report.postsAnalyzed,
+      top_posts: report.topPosts,
+      report: report.report,
+    })
+    .select()
+    .single();
+  if (error) { console.error('insertCompetitorReport', error); return null; }
+  return rowToCompetitorReport(data as CompetitorReportRow);
+}
+
+export async function deleteCompetitorReport(id: string): Promise<void> {
+  const { error } = await supabase.from('competitor_reports').delete().eq('id', id);
+  if (error) console.error('deleteCompetitorReport', error);
 }
 
 // ── Shared Data (viewer, no auth required) ─────────────────────────────────
