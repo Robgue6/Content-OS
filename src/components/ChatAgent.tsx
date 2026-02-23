@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { X, Trash2, Send, Loader2, MessageCircle, ChevronDown } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 import type { ChatMessage, BrandIdentity, Post, MatrixIdea, AppLanguage } from '../types';
 import * as analytics from '../lib/analytics';
 
@@ -35,13 +36,32 @@ function MessageBubble({ message }: { message: ChatMessage }) {
   return (
     <div className={`flex flex-col gap-1 ${isUser ? 'items-end' : 'items-start'}`}>
       <div
-        className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${
+        className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
           isUser
             ? 'bg-indigo-600 text-white rounded-br-sm'
             : 'bg-slate-100 text-slate-800 rounded-bl-sm'
         }`}
       >
-        {mainText}
+        <ReactMarkdown
+          components={{
+            p: ({ children }) => <p className="mb-1.5 last:mb-0">{children}</p>,
+            strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+            em: ({ children }) => <em className="italic">{children}</em>,
+            ul: ({ children }) => <ul className="list-disc pl-4 mb-1.5 space-y-0.5">{children}</ul>,
+            ol: ({ children }) => <ol className="list-decimal pl-4 mb-1.5 space-y-0.5">{children}</ol>,
+            li: ({ children }) => <li>{children}</li>,
+            code: ({ children }) => (
+              <code className={`px-1 py-0.5 rounded text-xs font-mono ${isUser ? 'bg-indigo-500' : 'bg-slate-200 text-slate-800'}`}>
+                {children}
+              </code>
+            ),
+            h1: ({ children }) => <p className="font-bold mb-1">{children}</p>,
+            h2: ({ children }) => <p className="font-bold mb-1">{children}</p>,
+            h3: ({ children }) => <p className="font-semibold mb-1">{children}</p>,
+          }}
+        >
+          {mainText}
+        </ReactMarkdown>
       </div>
 
       {!isUser && reasoning && (
