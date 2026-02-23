@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   LayoutDashboard, User, Grid3X3, CalendarDays, FlaskConical,
   Settings as SettingsIcon, Loader2, TrendingUp, LogOut,
-  ChevronLeft, ChevronRight, Menu, X, Telescope,
+  ChevronLeft, ChevronRight, Menu, X, Telescope, Activity,
 } from 'lucide-react';
 
 import Dashboard from './components/Dashboard';
@@ -13,6 +13,7 @@ import ScriptLab from './components/ScriptLab';
 import Settings from './components/Settings';
 import RoiTracker from './components/RoiTracker';
 import CompetitorIntel from './components/CompetitorIntel';
+import AgentHub from './components/AgentHub';
 import ChatAgent from './components/ChatAgent';
 import SharedView from './components/SharedView';
 import AuthPage from './components/auth/AuthPage';
@@ -24,7 +25,7 @@ import { supabase } from './lib/supabase';
 import * as db from './lib/db';
 import * as analytics from './lib/analytics';
 
-import type { AppState, NavTab, Post, Script, MatrixIdea, RoiCampaign, RoiEntry, BrandIdentity as BrandIdentityType, AppLanguage, ChatMessage, ShareLink, CompetitorReport } from './types';
+import type { AppState, NavTab, Post, Script, MatrixIdea, RoiCampaign, RoiEntry, BrandIdentity as BrandIdentityType, AppLanguage, ChatMessage, ShareLink, CompetitorReport, AgentAction } from './types';
 
 const DEFAULT_BRAND: BrandIdentityType = {
   icp: '',
@@ -41,6 +42,7 @@ const NAV_ITEMS: { tab: NavTab; label: string; icon: React.ReactNode }[] = [
   { tab: 'lab', label: 'Script Lab', icon: <FlaskConical className="w-[18px] h-[18px]" /> },
   { tab: 'roi', label: 'ROI', icon: <TrendingUp className="w-[18px] h-[18px]" /> },
   { tab: 'intel', label: 'Intel', icon: <Telescope className="w-[18px] h-[18px]" /> },
+  { tab: 'hub', label: 'Agent Hub', icon: <Activity className="w-[18px] h-[18px]" /> },
 ];
 
 export default function App() {
@@ -73,6 +75,7 @@ export default function App() {
   const [shareLink, setShareLink] = useState<ShareLink | null>(null);
   const [competitorReports, setCompetitorReports] = useState<CompetitorReport[]>([]);
   const [apifyApiKey, setApifyApiKeyState] = useState('');
+  const [agentActions, setAgentActions] = useState<AgentAction[]>([]);
 
   // Identify / reset user in Amplitude on auth change
   useEffect(() => {
@@ -96,7 +99,8 @@ export default function App() {
       db.fetchChatMessages(user.id),
       db.fetchShareLink(user.id),
       db.fetchCompetitorReports(user.id),
-    ]).then(([profile, postsData, scriptsData, ideasData, campaignsData, entriesData, messagesData, shareLinkData, reportsData]) => {
+      db.fetchAgentActions(user.id),
+    ]).then(([profile, postsData, scriptsData, ideasData, campaignsData, entriesData, messagesData, shareLinkData, reportsData, agentActionsData]) => {
       if (profile) {
         setBrandIdentity(profile.brand_identity && Object.keys(profile.brand_identity).length > 0
           ? profile.brand_identity as BrandIdentityType : DEFAULT_BRAND);
@@ -115,6 +119,7 @@ export default function App() {
       setChatMessages(messagesData);
       setShareLink(shareLinkData);
       setCompetitorReports(reportsData);
+      setAgentActions(agentActionsData);
     }).finally(() => setDataLoading(false));
   }, [user]);
 
@@ -168,27 +173,19 @@ export default function App() {
     if (!user) return;
     const tempId = `temp-${Date.now()}`;
     const tempUserMsg: ChatMessage = {
-      id: tempId,
-      role: 'user',
-      content: userContent,
-      createdAt: new Date().toISOString(),
+      id: tempId, role: 'user', content: userContent, createdAt: new Date().toISOString(),
     };
     setChatMessages(prev => [...prev, tempUserMsg]);
     const savedUser = await db.insertChatMessage(user.id, 'user', userContent);
-    if (savedUser) {
-      setChatMessages(prev => prev.map(m => m.id === tempId ? savedUser : m));
-    }
+    if (savedUser) setChatMessages(prev => prev.map(m => m.id === tempId ? savedUser : m));
+
     const recentPosts = posts.slice(-10).map(p =>
-      `- "${p.title}" | ${p.theme} | ${p.type} | ${p.status} | ${p.date}`
-    ).join('\n');
+      `- "${p.title}" | ${p.theme} | ${p.type} | ${p.status} | ${p.date}`).join('\n');
     const recentIdeas = matrixIdeas.slice(-10).map(i =>
-      `- "${i.title}" | ${i.theme} | ${i.type}${i.done ? ' (done)' : ''}`
-    ).join('\n');
+      `- "${i.title}" | ${i.theme} | ${i.type}${i.done ? ' (done)' : ''}`).join('\n');
     const systemPrompt = buildAgentSystem({ brandIdentity, themes, contentTypes, language, recentPosts, recentIdeas });
-    const historyForAI = chatMessages.slice(-20).map(m => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content,
-    }));
+    const historyForAI = chatMessages.slice(-20).map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+
     try {
       const orKey = import.meta.env.VITE_OPENROUTER_API_KEY as string;
       const openai = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: orKey, dangerouslyAllowBrowser: true });
@@ -200,11 +197,88 @@ export default function App() {
           { role: 'user', content: userContent },
         ],
       });
-      const assistantContent = response.choices[0].message.content ?? 'No response.';
-      const savedAssistant = await db.insertChatMessage(user.id, 'assistant', assistantContent);
-      if (savedAssistant) {
-        setChatMessages(prev => [...prev, savedAssistant]);
+      const rawContent = response.choices[0].message.content ?? '{}';
+
+      // ── Parse structured JSON response ─────────────────────────────────
+      interface ActionPayload {
+        type?: string;
+        title?: string;
+        date?: string;
+        theme?: string;
+        contentType?: string;
+        status?: string;
       }
+      let messageText = rawContent;
+      let actionPayloads: ActionPayload[] = [];
+
+      try {
+        const jsonStr = rawContent
+          .replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+        const start = jsonStr.indexOf('{');
+        const end = jsonStr.lastIndexOf('}');
+        if (start !== -1 && end !== -1) {
+          const parsed = JSON.parse(jsonStr.slice(start, end + 1)) as { message?: string; actions?: ActionPayload[] };
+          if (parsed.message) {
+            messageText = parsed.message
+              .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '').trim();
+            actionPayloads = Array.isArray(parsed.actions) ? parsed.actions : [];
+          }
+        }
+      } catch { /* not JSON — use raw text as message, no actions */ }
+
+      // ── Execute actions ────────────────────────────────────────────────
+      if (actionPayloads.length > 0) {
+        const chatContext = userContent.slice(0, 150);
+        const postPayloads = actionPayloads.filter(a => a.type === 'add_post');
+        const ideaPayloads = actionPayloads.filter(a => a.type === 'add_matrix_idea');
+        const actionsToLog: Omit<AgentAction, 'id' | 'createdAt'>[] = [];
+
+        if (postPayloads.length > 0) {
+          const postsToCreate = postPayloads.map(a => ({
+            title: a.title || 'Untitled',
+            date: a.date || new Date().toISOString().split('T')[0],
+            theme: fuzzyMatch(a.theme || '', themes),
+            type: fuzzyMatch(a.contentType || '', contentTypes),
+            status: 'IDEA' as const,
+          }));
+          const created = await db.bulkInsertPosts(user.id, postsToCreate);
+          setPosts(prev => [...prev, ...created]);
+          created.forEach(p => {
+            actionsToLog.push({ actionType: 'add_post', itemId: p.id, itemTitle: p.title, itemMeta: `${p.date} · ${p.theme} · ${p.type}`, chatContext });
+          });
+          if (created.length) analytics.trackAgentActionsExecuted('add_post', created.length);
+        }
+
+        if (ideaPayloads.length > 0) {
+          const ideasToCreate = ideaPayloads.map(a => ({
+            title: a.title || 'Untitled',
+            theme: fuzzyMatch(a.theme || '', themes),
+            type: fuzzyMatch(a.contentType || '', contentTypes),
+            done: false,
+          }));
+          const created = await db.bulkInsertMatrixIdeas(user.id, ideasToCreate);
+          setMatrixIdeas(prev => [...prev, ...created]);
+          created.forEach(idea => {
+            actionsToLog.push({ actionType: 'add_matrix_idea', itemId: idea.id, itemTitle: idea.title, itemMeta: `${idea.theme} · ${idea.type}`, chatContext });
+          });
+          if (created.length) analytics.trackAgentActionsExecuted('add_matrix_idea', created.length);
+        }
+
+        if (actionsToLog.length > 0) {
+          const saved = await db.bulkInsertAgentActions(user.id, actionsToLog);
+          setAgentActions(prev => [...saved, ...prev]);
+          const parts: string[] = [];
+          const np = actionsToLog.filter(a => a.actionType === 'add_post').length;
+          const ni = actionsToLog.filter(a => a.actionType === 'add_matrix_idea').length;
+          if (np > 0) parts.push(`${np} post${np > 1 ? 's' : ''} added to your calendar`);
+          if (ni > 0) parts.push(`${ni} idea${ni > 1 ? 's' : ''} added to Strategy Matrix`);
+          if (parts.length) messageText += `\n\n✅ Done: ${parts.join(' · ')} — see Agent Hub for the full log.`;
+        }
+      }
+
+      // ── Save and display ───────────────────────────────────────────────
+      const savedAssistant = await db.insertChatMessage(user.id, 'assistant', messageText);
+      if (savedAssistant) setChatMessages(prev => [...prev, savedAssistant]);
       analytics.trackAgentMessageSent(userContent.length);
     } catch (e) {
       console.error('Agent error', e);
@@ -362,6 +436,18 @@ export default function App() {
     await db.deleteCompetitorReport(id);
     analytics.trackIntelReportDeleted();
   };
+  const undoAgentAction = async (action: AgentAction) => {
+    setAgentActions(prev => prev.filter(a => a.id !== action.id));
+    await db.deleteAgentAction(action.id);
+    if (action.actionType === 'add_post') {
+      setPosts(prev => prev.filter(p => p.id !== action.itemId));
+      await db.deletePost(action.itemId);
+    } else if (action.actionType === 'add_matrix_idea') {
+      setMatrixIdeas(prev => prev.filter(i => i.id !== action.itemId));
+      await db.deleteMatrixIdea(action.itemId);
+    }
+    analytics.trackAgentActionUndone(action.actionType);
+  };
 
   // ── Lab ──────────────────────────────────────────────────────────────────
   const openLab = (postId: string) => {
@@ -380,7 +466,7 @@ export default function App() {
   const appState: AppState = {
     brandIdentity, themes, contentTypes, posts, scripts, matrixIdeas,
     roiCampaigns, roiEntries, aiEnabled, aiAgentEnabled, language, activeTab,
-    scriptLabPostId, chatMessages, competitorReports,
+    scriptLabPostId, chatMessages, competitorReports, agentActions,
   };
 
   // ── Derived ──────────────────────────────────────────────────────────────
@@ -657,6 +743,14 @@ export default function App() {
                   onNavigateToMatrix={() => navigate('matrix')}
                 />
               )}
+              {activeTab === 'hub' && (
+                <AgentHub
+                  agentActions={agentActions}
+                  onUndoAction={undoAgentAction}
+                  onNavigateToCalendar={() => navigate('calendar')}
+                  onNavigateToMatrix={() => navigate('matrix')}
+                />
+              )}
             </>
           )}
         </main>
@@ -698,6 +792,18 @@ export default function App() {
   );
 }
 
+/* ─── Fuzzy match AI theme/type output to user's actual values ──────────── */
+
+function fuzzyMatch(value: string, options: string[]): string {
+  if (!options.length) return value;
+  const v = value.toLowerCase().trim();
+  const exact = options.find(o => o.toLowerCase() === v);
+  if (exact) return exact;
+  const partial = options.find(o => v.includes(o.toLowerCase()) || o.toLowerCase().includes(v));
+  if (partial) return partial;
+  return options[0];
+}
+
 /* ─── Agent System Prompt Builder ───────────────────────────────────────── */
 
 const AGENT_LANGUAGE_NAMES: Record<AppLanguage, string> = { en: 'English', es: 'Spanish', fr: 'French' };
@@ -717,13 +823,14 @@ function buildAgentSystem({
   recentPosts: string;
   recentIdeas: string;
 }): string {
-  return `You are Content Agent, a strategic AI assistant embedded in ContentOS — a short-form video content workspace.
-Your job is to help content creators make better strategic decisions about their TikTok, Reels, and Shorts content.
+  const today = new Date().toISOString().split('T')[0];
+  return `You are Content Agent — an AI employee embedded in ContentOS who TAKES REAL ACTIONS in the app.
+You do not just describe what to create. When asked to build, create, add, or plan content, you actually do it.
 
 LANGUAGE: Respond in ${AGENT_LANGUAGE_NAMES[language]}.
 
 BRAND CONTEXT:
-- ICP (Ideal Customer Profile): ${brandIdentity.icp || 'Not defined'}
+- ICP: ${brandIdentity.icp || 'Not defined'}
 - Positioning: ${brandIdentity.positioning || 'Not defined'}
 - Voice & Tone: ${brandIdentity.tone || 'Not defined'}
 
@@ -736,18 +843,45 @@ AUDIENCE EMPATHY MAP:
 CONTENT THEMES: ${themes.join(', ') || 'None set'}
 CONTENT FORMATS: ${contentTypes.join(', ') || 'None set'}
 
-RECENT POSTS (last 10):
+RECENT CALENDAR (last 10 posts):
 ${recentPosts || 'No posts yet'}
 
-RECENT IDEAS (last 10 from Strategy Matrix):
+RECENT MATRIX IDEAS (last 10):
 ${recentIdeas || 'No ideas yet'}
 
-INSTRUCTIONS:
-- When reasoning through a complex question, wrap your thinking in <reasoning>...</reasoning> tags BEFORE your answer.
-- Your answer (outside the reasoning tags) should be direct, actionable, and concise.
-- Tailor all advice to the brand context above — reference it specifically, never give generic advice.
-- You can suggest specific video titles, angles, hooks, or strategy decisions.
-- Today's date is ${new Date().toISOString().split('T')[0]}.`;
+TODAY: ${today}
+
+════════════════════════════════════════
+RESPONSE FORMAT — MANDATORY
+════════════════════════════════════════
+Your ENTIRE response must be a single valid JSON object. No text before it, no text after it, no markdown fences.
+
+{
+  "message": "Your conversational response shown to the user",
+  "actions": []
+}
+
+════════════════════════════════════════
+AVAILABLE ACTIONS
+════════════════════════════════════════
+Use "actions" whenever the user asks you to create, add, plan, build, or schedule content.
+NEVER describe what you would create — put it directly in the actions array.
+
+ADD a post to the Content Calendar:
+{ "type": "add_post", "title": "...", "date": "YYYY-MM-DD", "theme": "...", "contentType": "...", "status": "IDEA" }
+
+ADD an idea to the Strategy Matrix:
+{ "type": "add_matrix_idea", "title": "...", "theme": "...", "contentType": "..." }
+
+════════════════════════════════════════
+STRICT RULES
+════════════════════════════════════════
+- "theme" MUST exactly match one of: ${themes.join(' | ')}
+- "contentType" MUST exactly match one of: ${contentTypes.join(' | ')}
+- Monthly calendar request → generate ALL days as add_post actions (never abbreviate or summarize)
+- Weekly plan → generate all 7 days as add_post actions
+- Tailor every title and theme to the brand context above — no generic content
+- Keep "message" concise; the actions ARE the work`;
 }
 
 /* ─── Lab Picker ─────────────────────────────────────────────────────────── */

@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import type { BrandIdentity, Post, Script, MatrixIdea, ChatMessage, ShareLink, CompetitorReport, CompetitorPost, CompetitorReportData } from '../types';
+import type { BrandIdentity, Post, Script, MatrixIdea, ChatMessage, ShareLink, CompetitorReport, CompetitorPost, CompetitorReportData, AgentAction, AgentActionType } from '../types';
 
 // ── Profile ───────────────────────────────────────────────────────────────
 
@@ -320,6 +320,110 @@ export async function insertShareLink(userId: string): Promise<ShareLink | null>
 export async function deleteShareLink(id: string): Promise<void> {
   const { error } = await supabase.from('share_links').delete().eq('id', id);
   if (error) console.error('deleteShareLink', error);
+}
+
+// ── Bulk helpers ──────────────────────────────────────────────────────────
+
+export async function bulkInsertPosts(userId: string, posts: Omit<Post, 'id'>[]): Promise<Post[]> {
+  if (!posts.length) return [];
+  const { data, error } = await supabase
+    .from('posts')
+    .insert(posts.map(p => ({
+      user_id: userId,
+      title: p.title,
+      date: p.date,
+      filming_date: p.filmingDate ?? null,
+      status: p.status,
+      theme: p.theme,
+      type: p.type,
+    })))
+    .select();
+  if (error) { console.error('bulkInsertPosts', error); return []; }
+  return (data as PostRow[]).map(row => ({
+    id: row.id,
+    title: row.title,
+    date: row.date,
+    filmingDate: row.filming_date ?? undefined,
+    status: row.status as Post['status'],
+    theme: row.theme,
+    type: row.type,
+  }));
+}
+
+export async function bulkInsertMatrixIdeas(userId: string, ideas: Omit<MatrixIdea, 'id'>[]): Promise<MatrixIdea[]> {
+  if (!ideas.length) return [];
+  const { data, error } = await supabase
+    .from('matrix_ideas')
+    .insert(ideas.map(i => ({ user_id: userId, theme: i.theme, type: i.type, title: i.title, done: i.done })))
+    .select();
+  if (error) { console.error('bulkInsertMatrixIdeas', error); return []; }
+  return (data as IdeaRow[]).map(row => ({ id: row.id, theme: row.theme, type: row.type, title: row.title, done: row.done }));
+}
+
+// ── Agent Actions ──────────────────────────────────────────────────────────
+
+type AgentActionRow = {
+  id: string;
+  user_id: string;
+  action_type: string;
+  item_id: string;
+  item_title: string;
+  item_meta: string;
+  chat_context: string;
+  created_at: string;
+};
+
+function rowToAgentAction(row: AgentActionRow): AgentAction {
+  return {
+    id: row.id,
+    actionType: row.action_type as AgentActionType,
+    itemId: row.item_id,
+    itemTitle: row.item_title,
+    itemMeta: row.item_meta,
+    chatContext: row.chat_context,
+    createdAt: row.created_at,
+  };
+}
+
+export async function fetchAgentActions(userId: string): Promise<AgentAction[]> {
+  const { data, error } = await supabase
+    .from('agent_actions')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(500);
+  if (error) { console.error('fetchAgentActions', error); return []; }
+  return (data as AgentActionRow[]).map(rowToAgentAction);
+}
+
+export async function bulkInsertAgentActions(
+  userId: string,
+  actions: Omit<AgentAction, 'id' | 'createdAt'>[],
+): Promise<AgentAction[]> {
+  if (!actions.length) return [];
+  const { data, error } = await supabase
+    .from('agent_actions')
+    .insert(actions.map(a => ({
+      user_id: userId,
+      action_type: a.actionType,
+      item_id: a.itemId,
+      item_title: a.itemTitle,
+      item_meta: a.itemMeta,
+      chat_context: a.chatContext,
+    })))
+    .select();
+  if (error) { console.error('bulkInsertAgentActions', error); return []; }
+  return (data as AgentActionRow[]).map(rowToAgentAction);
+}
+
+export async function deleteAgentAction(id: string): Promise<void> {
+  const { error } = await supabase.from('agent_actions').delete().eq('id', id);
+  if (error) console.error('deleteAgentAction', error);
+}
+
+export async function deleteAgentActionsByItemId(itemId: string): Promise<void> {
+  const { error } = await supabase.from('agent_actions').delete().eq('item_id', itemId);
+  if (error) console.error('deleteAgentActionsByItemId', error);
 }
 
 // ── Competitor Reports ─────────────────────────────────────────────────────

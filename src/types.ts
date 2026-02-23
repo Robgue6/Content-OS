@@ -79,7 +79,7 @@ export interface ShareLink {
   createdAt: string;
 }
 
-export type NavTab = 'dashboard' | 'identity' | 'matrix' | 'calendar' | 'lab' | 'roi' | 'intel';
+export type NavTab = 'dashboard' | 'identity' | 'matrix' | 'calendar' | 'lab' | 'roi' | 'intel' | 'hub';
 
 export type AppLanguage = 'en' | 'es' | 'fr';
 
@@ -99,6 +99,21 @@ export interface AppState {
   scriptLabPostId: string | null;
   chatMessages: ChatMessage[];
   competitorReports: CompetitorReport[];
+  agentActions: AgentAction[];
+}
+
+// ── Agent Actions ──────────────────────────────────────────────────────────
+
+export type AgentActionType = 'add_post' | 'add_matrix_idea';
+
+export interface AgentAction {
+  id: string;
+  actionType: AgentActionType;
+  itemId: string;
+  itemTitle: string;
+  itemMeta: string;      // e.g. "2026-03-01 · Mindset · Tutorial"
+  chatContext: string;   // first 150 chars of the user message that triggered this
+  createdAt: string;
 }
 
 // ── Competitor Intelligence ────────────────────────────────────────────────

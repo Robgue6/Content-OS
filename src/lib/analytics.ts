@@ -196,3 +196,11 @@ export const trackIntelIdeaAdded = (theme: string, type: string) =>
 
 export const trackIntelReportDeleted = () =>
   amplitude.track('intel_report_deleted');
+
+// ─── Agent Hub Actions ───────────────────────────────────────────────────────
+
+export const trackAgentActionsExecuted = (type: string, count: number) =>
+  amplitude.track('agent_actions_executed', { action_type: type, count });
+
+export const trackAgentActionUndone = (type: string) =>
+  amplitude.track('agent_action_undone', { action_type: type });
