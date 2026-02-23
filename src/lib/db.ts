@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import type { BrandIdentity, Post, Script, MatrixIdea, ChatMessage } from '../types';
+import type { BrandIdentity, Post, Script, MatrixIdea, ChatMessage, ShareLink } from '../types';
 
 // ── Profile ───────────────────────────────────────────────────────────────
 
@@ -296,4 +296,62 @@ export async function clearChatMessages(userId: string): Promise<void> {
     .delete()
     .eq('user_id', userId);
   if (error) console.error('clearChatMessages', error);
+}
+
+// ── Share Links ────────────────────────────────────────────────────────────
+
+type ShareLinkRow = { id: string; user_id: string; token: string; created_at: string };
+
+export async function fetchShareLink(userId: string): Promise<ShareLink | null> {
+  const { data } = await supabase.from('share_links').select('*').eq('user_id', userId).maybeSingle();
+  if (!data) return null;
+  const row = data as ShareLinkRow;
+  return { id: row.id, token: row.token, createdAt: row.created_at };
+}
+
+export async function insertShareLink(userId: string): Promise<ShareLink | null> {
+  const { data, error } = await supabase.from('share_links').insert({ user_id: userId }).select().single();
+  if (error) { console.error('insertShareLink', error); return null; }
+  const row = data as ShareLinkRow;
+  return { id: row.id, token: row.token, createdAt: row.created_at };
+}
+
+export async function deleteShareLink(id: string): Promise<void> {
+  const { error } = await supabase.from('share_links').delete().eq('id', id);
+  if (error) console.error('deleteShareLink', error);
+}
+
+// ── Shared Data (viewer, no auth required) ─────────────────────────────────
+
+export async function fetchSharedPosts(token: string): Promise<Post[]> {
+  const { data, error } = await supabase.rpc('get_shared_posts', { p_token: token });
+  if (error) { console.error('fetchSharedPosts', error); return []; }
+  return ((data as unknown[]) ?? []).map((row: unknown) => {
+    const r = row as { id: string; title: string; date: string; filming_date: string | null; status: string; theme: string; type: string; script_id: string | null };
+    return { id: r.id, title: r.title, date: r.date, filmingDate: r.filming_date ?? undefined, status: r.status as Post['status'], theme: r.theme, type: r.type, scriptId: r.script_id ?? undefined };
+  });
+}
+
+export async function fetchSharedMatrix(token: string): Promise<MatrixIdea[]> {
+  const { data, error } = await supabase.rpc('get_shared_matrix', { p_token: token });
+  if (error) { console.error('fetchSharedMatrix', error); return []; }
+  return ((data as unknown[]) ?? []).map((row: unknown) => {
+    const r = row as { id: string; theme: string; type: string; title: string; done: boolean };
+    return { id: r.id, theme: r.theme, type: r.type, title: r.title, done: r.done };
+  });
+}
+
+export async function fetchSharedRoi(token: string): Promise<{ campaigns: RoiCampaign[]; entries: RoiEntry[] }> {
+  const { data, error } = await supabase.rpc('get_shared_roi', { p_token: token });
+  if (error) { console.error('fetchSharedRoi', error); return { campaigns: [], entries: [] }; }
+  const d = data as { campaigns: unknown[]; entries: unknown[] };
+  const campaigns = (d.campaigns ?? []).map((row: unknown) => {
+    const r = row as { id: string; post_id: string | null; post_title: string; target_cost_per_follower: number; platform: string; status: string; created_at: string };
+    return { id: r.id, postId: r.post_id, postTitle: r.post_title, targetCostPerFollower: Number(r.target_cost_per_follower), platform: r.platform as RoiPlatform, status: r.status as RoiCampaignStatus, createdAt: r.created_at };
+  });
+  const entries = (d.entries ?? []).map((row: unknown) => {
+    const r = row as { id: string; campaign_id: string; date: string; spend: number; followers_gained: number; notes: string };
+    return { id: r.id, campaignId: r.campaign_id, date: r.date, spend: Number(r.spend), followersGained: r.followers_gained, notes: r.notes };
+  });
+  return { campaigns, entries };
 }

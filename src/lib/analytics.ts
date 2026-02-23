@@ -168,3 +168,14 @@ export const trackAgentOpened = () =>
 
 export const trackAgentClosed = () =>
   amplitude.track('agent_panel_closed');
+
+// ─── Sharing ────────────────────────────────────────────────────────────────
+
+export const trackShareLinkCreated = () =>
+  amplitude.track('share_link_created');
+
+export const trackShareLinkRevoked = () =>
+  amplitude.track('share_link_revoked');
+
+export const trackSharedViewOpened = (token: string) =>
+  amplitude.track('shared_view_opened', { token_prefix: token.slice(0, 8) });

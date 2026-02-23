@@ -13,6 +13,7 @@ import ScriptLab from './components/ScriptLab';
 import Settings from './components/Settings';
 import RoiTracker from './components/RoiTracker';
 import ChatAgent from './components/ChatAgent';
+import SharedView from './components/SharedView';
 import AuthPage from './components/auth/AuthPage';
 import LandingPage from './components/LandingPage';
 import OpenAI from 'openai';
@@ -22,7 +23,7 @@ import { supabase } from './lib/supabase';
 import * as db from './lib/db';
 import * as analytics from './lib/analytics';
 
-import type { AppState, NavTab, Post, Script, MatrixIdea, RoiCampaign, RoiEntry, BrandIdentity as BrandIdentityType, AppLanguage, ChatMessage } from './types';
+import type { AppState, NavTab, Post, Script, MatrixIdea, RoiCampaign, RoiEntry, BrandIdentity as BrandIdentityType, AppLanguage, ChatMessage, ShareLink } from './types';
 
 const DEFAULT_BRAND: BrandIdentityType = {
   icp: '',
@@ -41,6 +42,7 @@ const NAV_ITEMS: { tab: NavTab; label: string; icon: React.ReactNode }[] = [
 ];
 
 export default function App() {
+  const shareToken = new URLSearchParams(window.location.search).get('share');
   const { session, user, loading: authLoading } = useAuth();
 
   const [showAuth, setShowAuth] = useState(false);
@@ -66,6 +68,7 @@ export default function App() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [aiAgentEnabled, setAiAgentEnabledState] = useState(false);
   const [chatAgentOpen, setChatAgentOpen] = useState(false);
+  const [shareLink, setShareLink] = useState<ShareLink | null>(null);
 
   // Identify / reset user in Amplitude on auth change
   useEffect(() => {
@@ -87,7 +90,8 @@ export default function App() {
       db.fetchRoiCampaigns(user.id),
       db.fetchRoiEntries(user.id),
       db.fetchChatMessages(user.id),
-    ]).then(([profile, postsData, scriptsData, ideasData, campaignsData, entriesData, messagesData]) => {
+      db.fetchShareLink(user.id),
+    ]).then(([profile, postsData, scriptsData, ideasData, campaignsData, entriesData, messagesData, shareLinkData]) => {
       if (profile) {
         setBrandIdentity(profile.brand_identity && Object.keys(profile.brand_identity).length > 0
           ? profile.brand_identity as BrandIdentityType : DEFAULT_BRAND);
@@ -103,6 +107,7 @@ export default function App() {
       setRoiCampaigns(campaignsData);
       setRoiEntries(entriesData);
       setChatMessages(messagesData);
+      setShareLink(shareLinkData);
     }).finally(() => setDataLoading(false));
   }, [user]);
 
@@ -205,6 +210,17 @@ export default function App() {
     setChatMessages([]);
     await db.clearChatMessages(user.id);
     analytics.trackAgentHistoryCleared();
+  };
+  const generateShareLink = async () => {
+    if (!user) return;
+    const link = await db.insertShareLink(user.id);
+    if (link) { setShareLink(link); analytics.trackShareLinkCreated(); }
+  };
+  const revokeShareLink = async () => {
+    if (!shareLink) return;
+    setShareLink(null);
+    await db.deleteShareLink(shareLink.id);
+    analytics.trackShareLinkRevoked();
   };
   const setLanguage = async (lang: AppLanguage) => {
     setLanguageState(lang);
@@ -339,6 +355,8 @@ export default function App() {
 
   // ── Derived ──────────────────────────────────────────────────────────────
   const userInitial = (user?.email ?? 'U')[0].toUpperCase();
+
+  if (shareToken) return <SharedView token={shareToken} />;
 
   if (authLoading) {
     return (
@@ -525,6 +543,9 @@ export default function App() {
               language={language}
               onLanguageChange={setLanguage}
               userEmail={user?.email ?? ''}
+              shareLink={shareLink}
+              onGenerateShareLink={generateShareLink}
+              onRevokeShareLink={revokeShareLink}
             />
           ) : (
             <>

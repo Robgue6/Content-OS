@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Sparkles, LogOut, Languages } from 'lucide-react';
+import { Sparkles, LogOut, Languages, Link2, Check } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import type { AppLanguage } from '../types';
+import type { AppLanguage, ShareLink } from '../types';
 import * as analytics from '../lib/analytics';
 
 const LANGUAGES: { value: AppLanguage; label: string; flag: string }[] = [
@@ -18,9 +18,12 @@ interface Props {
   language: AppLanguage;
   onLanguageChange: (lang: AppLanguage) => void;
   userEmail: string;
+  shareLink: ShareLink | null;
+  onGenerateShareLink: () => Promise<void>;
+  onRevokeShareLink: () => Promise<void>;
 }
 
-export default function Settings({ aiEnabled, onAiEnabledChange, aiAgentEnabled, onAiAgentEnabledChange, language, onLanguageChange, userEmail }: Props) {
+export default function Settings({ aiEnabled, onAiEnabledChange, aiAgentEnabled, onAiAgentEnabledChange, language, onLanguageChange, userEmail, shareLink, onGenerateShareLink, onRevokeShareLink }: Props) {
   const handleAiToggle = () => {
     const next = !aiEnabled;
     analytics.trackAiGenerationToggled(next);
@@ -37,6 +40,14 @@ export default function Settings({ aiEnabled, onAiEnabledChange, aiAgentEnabled,
     onLanguageChange(lang);
   };
   const [signingOut, setSigningOut] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const shareUrl = shareLink ? `${window.location.origin}?share=${shareLink.token}` : '';
+  const copyShareUrl = async () => {
+    if (!shareUrl) return;
+    await navigator.clipboard.writeText(shareUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const signOut = async () => {
     setSigningOut(true);
@@ -169,6 +180,53 @@ export default function Settings({ aiEnabled, onAiEnabledChange, aiAgentEnabled,
             ? 'Content Agent is active — look for the chat button in the bottom-right corner'
             : 'Content Agent is hidden'}
         </div>
+      </div>
+
+      {/* Share with Advisor */}
+      <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <Link2 className="w-4 h-4 text-indigo-500" />
+          <h2 className="text-sm font-semibold text-slate-700">Share with Advisor</h2>
+        </div>
+        <p className="text-xs text-slate-500 leading-relaxed">
+          Generate a read-only link to share your Calendar, Strategy Matrix, and ROI
+          with a manager or advisor. Anyone with the link can view — no account needed.
+        </p>
+        {shareLink ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+              <input
+                readOnly
+                value={shareUrl}
+                className="flex-1 text-xs text-slate-600 bg-transparent outline-none truncate"
+              />
+              <button
+                onClick={copyShareUrl}
+                className="shrink-0 flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-800 transition-colors"
+              >
+                {copied ? <><Check className="w-3 h-3" />Copied!</> : 'Copy'}
+              </button>
+            </div>
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-slate-400">
+                Created {new Date(shareLink.createdAt).toLocaleDateString()}
+              </p>
+              <button
+                onClick={onRevokeShareLink}
+                className="text-xs font-medium text-rose-500 hover:text-rose-700 transition-colors"
+              >
+                Revoke link
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={onGenerateShareLink}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors"
+          >
+            <Link2 className="w-4 h-4" /> Generate share link
+          </button>
+        )}
       </div>
 
       <div className="bg-slate-50 rounded-xl border border-slate-200 p-5">

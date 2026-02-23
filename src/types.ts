@@ -73,6 +73,12 @@ export interface ChatMessage {
   createdAt: string;
 }
 
+export interface ShareLink {
+  id: string;
+  token: string;
+  createdAt: string;
+}
+
 export type NavTab = 'dashboard' | 'identity' | 'matrix' | 'calendar' | 'lab' | 'roi';
 
 export type AppLanguage = 'en' | 'es' | 'fr';
