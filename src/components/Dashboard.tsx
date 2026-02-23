@@ -33,11 +33,6 @@ export default function Dashboard({ state, onNavigate }: Props) {
     count: posts.filter(p => p.theme === theme).length,
   })).filter(t => t.count > 0);
 
-  const totalPosts = posts.length;
-  const maxThemeCount = themeCounts.reduce((max, t) => Math.max(max, t.count), 0);
-  const dominantPct = totalPosts > 0 ? Math.round((maxThemeCount / totalPosts) * 100) : 0;
-  const themeImbalance = dominantPct > 60;
-
   const statusCounts = {
     IDEA: posts.filter(p => p.status === 'IDEA').length,
     DRAFT: posts.filter(p => p.status === 'DRAFT').length,
@@ -78,16 +73,7 @@ export default function Dashboard({ state, onNavigate }: Props) {
         </div>
       )}
 
-      {themeImbalance && (
-        <div className="flex items-center gap-3 bg-rose-50 border border-rose-200 rounded-lg px-4 py-3">
-          <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
-          <p className="text-sm font-medium text-rose-800">
-            Theme imbalance detected — one theme covers {dominantPct}% of your calendar (target: &lt;60%)
-          </p>
-        </div>
-      )}
-
-      {/* KPI Cards */}
+{/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KPICard icon={<Lightbulb className="w-5 h-5 text-slate-400" />} label="Ideas" value={statusCounts.IDEA} color="slate" />
         <KPICard icon={<FileText className="w-5 h-5 text-indigo-400" />} label="Drafts" value={statusCounts.DRAFT} color="indigo" />
