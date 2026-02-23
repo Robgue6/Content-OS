@@ -64,6 +64,15 @@ export interface RoiEntry {
   notes: string;
 }
 
+export type ChatRole = 'user' | 'assistant';
+
+export interface ChatMessage {
+  id: string;
+  role: ChatRole;
+  content: string;
+  createdAt: string;
+}
+
 export type NavTab = 'dashboard' | 'identity' | 'matrix' | 'calendar' | 'lab' | 'roi';
 
 export type AppLanguage = 'en' | 'es' | 'fr';
@@ -78,7 +87,9 @@ export interface AppState {
   roiCampaigns: RoiCampaign[];
   roiEntries: RoiEntry[];
   aiEnabled: boolean;
+  aiAgentEnabled: boolean;
   language: AppLanguage;
   activeTab: NavTab;
   scriptLabPostId: string | null;
+  chatMessages: ChatMessage[];
 }

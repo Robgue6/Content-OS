@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import type { BrandIdentity, Post, Script, MatrixIdea } from '../types';
+import type { BrandIdentity, Post, Script, MatrixIdea, ChatMessage } from '../types';
 
 // ── Profile ───────────────────────────────────────────────────────────────
 
@@ -9,6 +9,7 @@ export interface ProfileRow {
   themes: string[];
   content_types: string[];
   ai_enabled: boolean;
+  ai_agent_enabled: boolean;
   gemini_api_key: string | null;
   language: string | null;
 }
@@ -243,4 +244,56 @@ export async function updateRoiEntry(id: string, e: Partial<Omit<RoiEntry, 'id' 
 export async function deleteRoiEntry(id: string) {
   const { error } = await supabase.from('roi_entries').delete().eq('id', id);
   if (error) console.error('deleteRoiEntry', error);
+}
+
+// ── Chat Messages ──────────────────────────────────────────────────────────
+
+type ChatMessageRow = {
+  id: string;
+  user_id: string;
+  role: string;
+  content: string;
+  created_at: string;
+};
+
+function rowToChatMessage(row: ChatMessageRow): ChatMessage {
+  return {
+    id: row.id,
+    role: row.role as ChatMessage['role'],
+    content: row.content,
+    createdAt: row.created_at,
+  };
+}
+
+export async function fetchChatMessages(userId: string): Promise<ChatMessage[]> {
+  const { data, error } = await supabase
+    .from('chat_messages')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true })
+    .limit(100);
+  if (error) { console.error('fetchChatMessages', error); return []; }
+  return (data as ChatMessageRow[]).map(rowToChatMessage);
+}
+
+export async function insertChatMessage(
+  userId: string,
+  role: ChatMessage['role'],
+  content: string
+): Promise<ChatMessage | null> {
+  const { data, error } = await supabase
+    .from('chat_messages')
+    .insert({ user_id: userId, role, content })
+    .select()
+    .single();
+  if (error) { console.error('insertChatMessage', error); return null; }
+  return rowToChatMessage(data as ChatMessageRow);
+}
+
+export async function clearChatMessages(userId: string): Promise<void> {
+  const { error } = await supabase
+    .from('chat_messages')
+    .delete()
+    .eq('user_id', userId);
+  if (error) console.error('clearChatMessages', error);
 }

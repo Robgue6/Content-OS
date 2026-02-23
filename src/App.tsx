@@ -12,15 +12,17 @@ import ContentCalendar from './components/ContentCalendar';
 import ScriptLab from './components/ScriptLab';
 import Settings from './components/Settings';
 import RoiTracker from './components/RoiTracker';
+import ChatAgent from './components/ChatAgent';
 import AuthPage from './components/auth/AuthPage';
 import LandingPage from './components/LandingPage';
+import OpenAI from 'openai';
 
 import { useAuth } from './hooks/useAuth';
 import { supabase } from './lib/supabase';
 import * as db from './lib/db';
 import * as analytics from './lib/analytics';
 
-import type { AppState, NavTab, Post, Script, MatrixIdea, RoiCampaign, RoiEntry, BrandIdentity as BrandIdentityType, AppLanguage } from './types';
+import type { AppState, NavTab, Post, Script, MatrixIdea, RoiCampaign, RoiEntry, BrandIdentity as BrandIdentityType, AppLanguage, ChatMessage } from './types';
 
 const DEFAULT_BRAND: BrandIdentityType = {
   icp: '',
@@ -61,6 +63,9 @@ export default function App() {
   const [matrixIdeas, setMatrixIdeas] = useState<MatrixIdea[]>([]);
   const [roiCampaigns, setRoiCampaigns] = useState<RoiCampaign[]>([]);
   const [roiEntries, setRoiEntries] = useState<RoiEntry[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [aiAgentEnabled, setAiAgentEnabledState] = useState(false);
+  const [chatAgentOpen, setChatAgentOpen] = useState(false);
 
   // Identify / reset user in Amplitude on auth change
   useEffect(() => {
@@ -81,13 +86,15 @@ export default function App() {
       db.fetchMatrixIdeas(user.id),
       db.fetchRoiCampaigns(user.id),
       db.fetchRoiEntries(user.id),
-    ]).then(([profile, postsData, scriptsData, ideasData, campaignsData, entriesData]) => {
+      db.fetchChatMessages(user.id),
+    ]).then(([profile, postsData, scriptsData, ideasData, campaignsData, entriesData, messagesData]) => {
       if (profile) {
         setBrandIdentity(profile.brand_identity && Object.keys(profile.brand_identity).length > 0
           ? profile.brand_identity as BrandIdentityType : DEFAULT_BRAND);
         setThemes(profile.themes.length > 0 ? profile.themes : ['Growth', 'Mindset', 'Tools']);
         setContentTypes(profile.content_types.length > 0 ? profile.content_types : ['Tutorial', 'Story', 'Listicle', 'Hot Take']);
         setAiEnabledState(profile.ai_enabled);
+        setAiAgentEnabledState(profile.ai_agent_enabled ?? false);
         setLanguageState((profile.language as AppLanguage) ?? 'en');
       }
       setPosts(postsData);
@@ -95,6 +102,7 @@ export default function App() {
       setMatrixIdeas(ideasData);
       setRoiCampaigns(campaignsData);
       setRoiEntries(entriesData);
+      setChatMessages(messagesData);
     }).finally(() => setDataLoading(false));
   }, [user]);
 
@@ -138,6 +146,65 @@ export default function App() {
   const setAiEnabled = async (enabled: boolean) => {
     setAiEnabledState(enabled);
     if (user) await db.updateProfile(user.id, { ai_enabled: enabled });
+  };
+  const setAiAgentEnabled = async (enabled: boolean) => {
+    setAiAgentEnabledState(enabled);
+    analytics.trackAiAgentToggled(enabled);
+    if (user) await db.updateProfile(user.id, { ai_agent_enabled: enabled });
+  };
+  const handleSendMessage = async (userContent: string) => {
+    if (!user) return;
+    const tempId = `temp-${Date.now()}`;
+    const tempUserMsg: ChatMessage = {
+      id: tempId,
+      role: 'user',
+      content: userContent,
+      createdAt: new Date().toISOString(),
+    };
+    setChatMessages(prev => [...prev, tempUserMsg]);
+    const savedUser = await db.insertChatMessage(user.id, 'user', userContent);
+    if (savedUser) {
+      setChatMessages(prev => prev.map(m => m.id === tempId ? savedUser : m));
+    }
+    const recentPosts = posts.slice(-10).map(p =>
+      `- "${p.title}" | ${p.theme} | ${p.type} | ${p.status} | ${p.date}`
+    ).join('\n');
+    const recentIdeas = matrixIdeas.slice(-10).map(i =>
+      `- "${i.title}" | ${i.theme} | ${i.type}${i.done ? ' (done)' : ''}`
+    ).join('\n');
+    const systemPrompt = buildAgentSystem({ brandIdentity, themes, contentTypes, language, recentPosts, recentIdeas });
+    const historyForAI = chatMessages.slice(-20).map(m => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+    }));
+    try {
+      const orKey = import.meta.env.VITE_OPENROUTER_API_KEY as string;
+      const openai = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: orKey, dangerouslyAllowBrowser: true });
+      const response = await openai.chat.completions.create({
+        model: 'arcee-ai/trinity-large-preview:free',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...historyForAI,
+          { role: 'user', content: userContent },
+        ],
+      });
+      const assistantContent = response.choices[0].message.content ?? 'No response.';
+      const savedAssistant = await db.insertChatMessage(user.id, 'assistant', assistantContent);
+      if (savedAssistant) {
+        setChatMessages(prev => [...prev, savedAssistant]);
+      }
+      analytics.trackAgentMessageSent(userContent.length);
+    } catch (e) {
+      console.error('Agent error', e);
+      analytics.trackAgentError(String(e));
+      throw e;
+    }
+  };
+  const handleClearHistory = async () => {
+    if (!user) return;
+    setChatMessages([]);
+    await db.clearChatMessages(user.id);
+    analytics.trackAgentHistoryCleared();
   };
   const setLanguage = async (lang: AppLanguage) => {
     setLanguageState(lang);
@@ -266,7 +333,8 @@ export default function App() {
 
   const appState: AppState = {
     brandIdentity, themes, contentTypes, posts, scripts, matrixIdeas,
-    roiCampaigns, roiEntries, aiEnabled, language, activeTab, scriptLabPostId,
+    roiCampaigns, roiEntries, aiEnabled, aiAgentEnabled, language, activeTab,
+    scriptLabPostId, chatMessages,
   };
 
   // ── Derived ──────────────────────────────────────────────────────────────
@@ -452,6 +520,8 @@ export default function App() {
             <Settings
               aiEnabled={aiEnabled}
               onAiEnabledChange={setAiEnabled}
+              aiAgentEnabled={aiAgentEnabled}
+              onAiAgentEnabledChange={setAiAgentEnabled}
               language={language}
               onLanguageChange={setLanguage}
               userEmail={user?.email ?? ''}
@@ -540,8 +610,77 @@ export default function App() {
           }}
         />
       )}
+
+      {/* Floating Chat Agent */}
+      {aiAgentEnabled && (
+        <ChatAgent
+          isOpen={chatAgentOpen}
+          onToggle={() => setChatAgentOpen(o => !o)}
+          messages={chatMessages}
+          brandIdentity={brandIdentity}
+          themes={themes}
+          contentTypes={contentTypes}
+          posts={posts}
+          matrixIdeas={matrixIdeas}
+          language={language}
+          onSendMessage={handleSendMessage}
+          onClearHistory={handleClearHistory}
+        />
+      )}
     </div>
   );
+}
+
+/* ─── Agent System Prompt Builder ───────────────────────────────────────── */
+
+const AGENT_LANGUAGE_NAMES: Record<AppLanguage, string> = { en: 'English', es: 'Spanish', fr: 'French' };
+
+function buildAgentSystem({
+  brandIdentity,
+  themes,
+  contentTypes,
+  language,
+  recentPosts,
+  recentIdeas,
+}: {
+  brandIdentity: BrandIdentityType;
+  themes: string[];
+  contentTypes: string[];
+  language: AppLanguage;
+  recentPosts: string;
+  recentIdeas: string;
+}): string {
+  return `You are Content Agent, a strategic AI assistant embedded in ContentOS — a short-form video content workspace.
+Your job is to help content creators make better strategic decisions about their TikTok, Reels, and Shorts content.
+
+LANGUAGE: Respond in ${AGENT_LANGUAGE_NAMES[language]}.
+
+BRAND CONTEXT:
+- ICP (Ideal Customer Profile): ${brandIdentity.icp || 'Not defined'}
+- Positioning: ${brandIdentity.positioning || 'Not defined'}
+- Voice & Tone: ${brandIdentity.tone || 'Not defined'}
+
+AUDIENCE EMPATHY MAP:
+- Pains: ${brandIdentity.empathyMap?.pains || 'Not defined'}
+- Gains: ${brandIdentity.empathyMap?.gains || 'Not defined'}
+- Fears: ${brandIdentity.empathyMap?.fears || 'Not defined'}
+- Hopes: ${brandIdentity.empathyMap?.hopes || 'Not defined'}
+
+CONTENT THEMES: ${themes.join(', ') || 'None set'}
+CONTENT FORMATS: ${contentTypes.join(', ') || 'None set'}
+
+RECENT POSTS (last 10):
+${recentPosts || 'No posts yet'}
+
+RECENT IDEAS (last 10 from Strategy Matrix):
+${recentIdeas || 'No ideas yet'}
+
+INSTRUCTIONS:
+- When reasoning through a complex question, wrap your thinking in <reasoning>...</reasoning> tags BEFORE your answer.
+- Your answer (outside the reasoning tags) should be direct, actionable, and concise.
+- Tailor all advice to the brand context above — reference it specifically, never give generic advice.
+- You can suggest specific video titles, angles, hooks, or strategy decisions.
+- Today's date is ${new Date().toISOString().split('T')[0]}.`;
 }
 
 /* ─── Lab Picker ─────────────────────────────────────────────────────────── */

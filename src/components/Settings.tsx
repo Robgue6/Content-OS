@@ -13,16 +13,23 @@ const LANGUAGES: { value: AppLanguage; label: string; flag: string }[] = [
 interface Props {
   aiEnabled: boolean;
   onAiEnabledChange: (enabled: boolean) => void;
+  aiAgentEnabled: boolean;
+  onAiAgentEnabledChange: (enabled: boolean) => void;
   language: AppLanguage;
   onLanguageChange: (lang: AppLanguage) => void;
   userEmail: string;
 }
 
-export default function Settings({ aiEnabled, onAiEnabledChange, language, onLanguageChange, userEmail }: Props) {
+export default function Settings({ aiEnabled, onAiEnabledChange, aiAgentEnabled, onAiAgentEnabledChange, language, onLanguageChange, userEmail }: Props) {
   const handleAiToggle = () => {
     const next = !aiEnabled;
     analytics.trackAiGenerationToggled(next);
     onAiEnabledChange(next);
+  };
+  const handleAiAgentToggle = () => {
+    const next = !aiAgentEnabled;
+    analytics.trackAiAgentToggled(next);
+    onAiAgentEnabledChange(next);
   };
 
   const handleLanguageChange = (lang: AppLanguage) => {
@@ -123,6 +130,44 @@ export default function Settings({ aiEnabled, onAiEnabledChange, language, onLan
           }`}>
           <span className={`w-1.5 h-1.5 rounded-full ${aiEnabled ? 'bg-indigo-500' : 'bg-slate-300'}`} />
           {aiEnabled ? 'AI idea generation is active in the Strategy Matrix' : 'AI idea generation is hidden — manual mode only'}
+        </div>
+      </div>
+
+      {/* AI Content Agent Feature Flag */}
+      <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Sparkles className="w-4 h-4 text-violet-500" />
+              <h2 className="text-sm font-semibold text-slate-700">AI Content Agent</h2>
+            </div>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              When enabled, a floating chat agent appears on every page. Ask questions about
+              your strategy, get content ideas, or brainstorm angles — all grounded in your Brand Identity.
+            </p>
+          </div>
+          <button
+            onClick={handleAiAgentToggle}
+            className={`relative shrink-0 w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 ${
+              aiAgentEnabled ? 'bg-violet-600' : 'bg-slate-200'
+            }`}
+            role="switch"
+            aria-checked={aiAgentEnabled}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${
+                aiAgentEnabled ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+        <div className={`flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg ${
+          aiAgentEnabled ? 'bg-violet-50 text-violet-700' : 'bg-slate-50 text-slate-500'
+        }`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${aiAgentEnabled ? 'bg-violet-500' : 'bg-slate-300'}`} />
+          {aiAgentEnabled
+            ? 'Content Agent is active — look for the chat button in the bottom-right corner'
+            : 'Content Agent is hidden'}
         </div>
       </div>
 

@@ -148,3 +148,23 @@ export const trackAiGenerationToggled = (enabled: boolean) =>
 
 export const trackLanguageChanged = (from: string, to: string) =>
   amplitude.track('language_changed', { from, to });
+
+// ─── AI Chat Agent ──────────────────────────────────────────────────────────
+
+export const trackAiAgentToggled = (enabled: boolean) =>
+  amplitude.track('ai_agent_toggled', { enabled });
+
+export const trackAgentMessageSent = (contentLength: number) =>
+  amplitude.track('agent_message_sent', { content_length: contentLength });
+
+export const trackAgentError = (error: string) =>
+  amplitude.track('agent_error', { error });
+
+export const trackAgentHistoryCleared = () =>
+  amplitude.track('agent_history_cleared');
+
+export const trackAgentOpened = () =>
+  amplitude.track('agent_panel_opened');
+
+export const trackAgentClosed = () =>
+  amplitude.track('agent_panel_closed');
