@@ -173,6 +173,8 @@ export interface CompetitorPost {
   type: string;
   engagementScore: number;
   comments: CompetitorComment[];
+  thumbnailUrl?: string;
+  videoUrl?: string;
 }
 
 export interface CompetitorComment {

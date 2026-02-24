@@ -61,6 +61,9 @@ function mapPost(raw: Record<string, unknown>): CompetitorPost {
   const likes = Number(raw.likesCount ?? raw.likes ?? 0);
   const comments = Number(raw.commentsCount ?? raw.comments ?? 0);
   const views = Number(raw.videoViewCount ?? raw.videoPlayCount ?? raw.playCount ?? 0);
+  const postType = String(raw.type ?? raw.media_type ?? 'image');
+  const thumbnailRaw = String(raw.displayUrl ?? raw.thumbnailUrl ?? raw.thumbnail_url ?? raw.previewUrl ?? '');
+  const videoRaw = String(raw.videoUrl ?? raw.video_url ?? raw.videoUrlHd ?? '');
   return {
     id: String(raw.id ?? raw.shortCode ?? Math.random()),
     shortCode: String(raw.shortCode ?? raw.code ?? ''),
@@ -70,9 +73,11 @@ function mapPost(raw: Record<string, unknown>): CompetitorPost {
     commentsCount: comments,
     videoViewCount: views,
     timestamp: String(raw.timestamp ?? raw.taken_at ?? ''),
-    type: String(raw.type ?? raw.media_type ?? 'image'),
+    type: postType,
     engagementScore: calcEngagement({ likesCount: likes, commentsCount: comments, videoViewCount: views }),
     comments: [],
+    thumbnailUrl: thumbnailRaw || undefined,
+    videoUrl: videoRaw || undefined,
   };
 }
 
@@ -593,21 +598,37 @@ export default function CompetitorIntel({
             {topPosts.map((post, i) => (
               <div key={post.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
                 <div className="flex flex-col lg:flex-row">
-                  {/* Instagram embed */}
-                  {post.shortCode && (
+                  {/* Post media — native video/image, no redirect */}
+                  {(post.videoUrl || post.thumbnailUrl) ? (
+                    <div className="lg:w-80 shrink-0 bg-black border-b lg:border-b-0 lg:border-r border-slate-200 flex items-center justify-center overflow-hidden rounded-tl-xl rounded-bl-xl">
+                      {post.videoUrl ? (
+                        <video
+                          src={post.videoUrl}
+                          poster={post.thumbnailUrl}
+                          controls
+                          preload="metadata"
+                          className="w-full max-h-96 object-contain"
+                        />
+                      ) : (
+                        <img
+                          src={post.thumbnailUrl}
+                          alt={`Post #${i + 1} by @${competitorHandle}`}
+                          className="w-full max-h-96 object-cover"
+                        />
+                      )}
+                    </div>
+                  ) : post.shortCode ? (
                     <div className="lg:w-80 shrink-0 bg-slate-50 border-b lg:border-b-0 lg:border-r border-slate-200 flex items-center justify-center p-4">
                       <iframe
                         src={`https://www.instagram.com/p/${post.shortCode}/embed/`}
                         width="300"
                         height="380"
-                        frameBorder="0"
-                        scrolling="no"
-                        allowTransparency={true}
+                        style={{ border: 0 }}
                         className="rounded-xl"
                         title={`Post #${i + 1} by @${competitorHandle}`}
                       />
                     </div>
-                  )}
+                  ) : null}
 
                   {/* Metrics and analysis */}
                   <div className="flex-1 p-5 space-y-4">
@@ -622,9 +643,10 @@ export default function CompetitorIntel({
                         href={post.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-xs text-indigo-600 hover:text-indigo-800 font-medium shrink-0"
+                        className="text-xs text-slate-400 hover:text-indigo-600 transition-colors shrink-0"
+                        title="Open on Instagram"
                       >
-                        View on Instagram →
+                        ↗
                       </a>
                     </div>
 
