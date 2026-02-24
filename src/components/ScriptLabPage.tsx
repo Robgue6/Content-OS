@@ -4,7 +4,7 @@ import {
   Play, Pause, SkipBack, FileText, Maximize2, Minimize2,
   Tv2, Camera, Rocket, CalendarCheck, AlertTriangle,
   ChevronLeft, ChevronRight, Bot, CheckCircle2, Circle,
-  FlaskConical, X, Filter,
+  FlaskConical, X, Filter, ArrowRight,
 } from 'lucide-react';
 import OpenAI from 'openai';
 import type { Post, Script, BrandIdentity, AppLanguage, AgentAction } from '../types';
@@ -17,6 +17,14 @@ type SortMode = 'date' | 'status';
 type PreviewMode = 'read' | 'teleprompter' | 'schedule';
 
 interface ScriptSections { hook: string; body: string; cta: string; }
+
+interface AngleCard {
+  type: string;
+  emoji: string;
+  hook: string;
+  description: string;
+  bestFor: string;
+}
 
 interface Props {
   posts: Post[];
@@ -47,6 +55,12 @@ export default function ScriptLabPage({
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
+
+  // Angle Cards
+  const [showAnglePicker, setShowAnglePicker] = useState(false);
+  const [anglesLoading, setAnglesLoading] = useState(false);
+  const [angleCards, setAngleCards] = useState<AngleCard[]>([]);
+  const [chosenAngle, setChosenAngle] = useState<AngleCard | null>(null);
 
   // Preview panel
   const [previewMode, setPreviewMode] = useState<PreviewMode>('read');
@@ -127,6 +141,9 @@ export default function ScriptLabPage({
     setError('');
     setSaved(false);
     setPlaying(false);
+    setShowAnglePicker(false);
+    setAngleCards([]);
+    setChosenAngle(null);
   }, [selectedPostId, existingScript?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Unique themes for theme filter chips
@@ -178,7 +195,7 @@ export default function ScriptLabPage({
   // Section fill progress (0-3)
   const filledSections = [sections.hook, sections.body, sections.cta].filter(Boolean).length;
 
-  const generate = async () => {
+  const generate = async (angle?: AngleCard) => {
     if (!selectedPost) return;
     const orKey = import.meta.env.VITE_OPENROUTER_API_KEY as string;
     if (!orKey) { setError('OpenRouter API key is not configured.'); return; }
@@ -190,7 +207,7 @@ export default function ScriptLabPage({
         model: 'arcee-ai/trinity-large-preview:free',
         messages: [
           { role: 'system', content: buildSystem(brandIdentity, language) },
-          { role: 'user', content: buildPrompt(selectedPost, brandIdentity) },
+          { role: 'user', content: buildPrompt(selectedPost, brandIdentity, angle) },
         ],
         response_format: { type: 'json_object' },
       });
@@ -205,6 +222,53 @@ export default function ScriptLabPage({
       setError('Generation failed. Check your API key and try again.');
       analytics.trackScriptGenerationFailed(String(e));
     } finally { setLoading(false); }
+  };
+
+  const generateAngles = async () => {
+    if (!selectedPost) return;
+    const orKey = import.meta.env.VITE_OPENROUTER_API_KEY as string;
+    if (!orKey) { setError('OpenRouter API key is not configured.'); setShowAnglePicker(false); return; }
+    setAnglesLoading(true); setAngleCards([]); setError('');
+    try {
+      const openai = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: orKey, dangerouslyAllowBrowser: true });
+      const response = await openai.chat.completions.create({
+        model: 'arcee-ai/trinity-large-preview:free',
+        messages: [
+          { role: 'system', content: 'You are a short-form content strategist. Return ONLY valid JSON, no markdown.' },
+          { role: 'user', content: buildAnglesPrompt(selectedPost, brandIdentity) },
+        ],
+        response_format: { type: 'json_object' },
+      });
+      const raw = response.choices[0].message.content ?? '{}';
+      const parsed = JSON.parse(raw);
+      setAngleCards((parsed.angles ?? []).slice(0, 3) as AngleCard[]);
+    } catch (e) {
+      console.error(e);
+      setError('Could not generate angles. Try generating directly instead.');
+      setShowAnglePicker(false);
+    } finally { setAnglesLoading(false); }
+  };
+
+  const handleGenerateClick = async () => {
+    if (showAnglePicker) {
+      // User is in picker — clicking again = skip directly to generate
+      setShowAnglePicker(false);
+      generate();
+      return;
+    }
+    setShowAnglePicker(true);
+    await generateAngles();
+  };
+
+  const handleAnglePick = (card: AngleCard) => {
+    setChosenAngle(card);
+    setShowAnglePicker(false);
+    generate(card);
+  };
+
+  const handleAngleSkip = () => {
+    setShowAnglePicker(false);
+    generate();
   };
 
   const handleSave = () => {
@@ -499,13 +563,37 @@ export default function ScriptLabPage({
             {/* Toolbar */}
             <div className="shrink-0 flex items-center gap-2.5 px-5 py-2.5 border-b border-slate-100 bg-slate-50">
               <button
-                onClick={generate}
+                onClick={handleGenerateClick}
                 disabled={loading}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 disabled:opacity-60 transition-colors"
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 text-white text-xs font-bold rounded-lg transition-colors disabled:opacity-60 ${
+                  showAnglePicker
+                    ? 'bg-slate-700 hover:bg-slate-800'
+                    : 'bg-indigo-600 hover:bg-indigo-700'
+                }`}
               >
-                {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                {loading ? 'Generating…' : hasContent ? 'Regenerate' : 'Generate Script'}
+                {loading || anglesLoading
+                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  : <Sparkles className="w-3.5 h-3.5" />}
+                {loading ? 'Generating…'
+                  : anglesLoading ? 'Picking angles…'
+                  : showAnglePicker ? 'Skip → Generate now'
+                  : hasContent ? 'Regenerate'
+                  : 'Generate Script'}
               </button>
+              {/* Chosen angle badge */}
+              {chosenAngle && !showAnglePicker && !loading && (
+                <div className="flex items-center gap-1.5 text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full px-2.5 py-0.5">
+                  <span>{chosenAngle.emoji}</span>
+                  <span>{chosenAngle.type}</span>
+                  <button
+                    onClick={() => setChosenAngle(null)}
+                    className="text-indigo-400 hover:text-indigo-700 transition-colors ml-0.5"
+                    title="Clear angle"
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              )}
               {hasContent && (
                 <>
                   <button
@@ -558,47 +646,59 @@ export default function ScriptLabPage({
                   <div className="bg-rose-50 border border-rose-200 rounded-lg px-4 py-3 text-xs text-rose-700">{error}</div>
                 )}
 
-                <ScriptSection
-                  label="Hook"
-                  sublabel="First 2 seconds — stop the scroll"
-                  accent="rose"
-                  value={sections.hook}
-                  onChange={v => setSections(p => ({ ...p, hook: v }))}
-                  placeholder="Your opening line that makes people freeze mid-scroll…"
-                  rows={3}
-                />
-                <ScriptSection
-                  label="Value Delivery"
-                  sublabel="The core message — earn the watch"
-                  accent="indigo"
-                  value={sections.body}
-                  onChange={v => setSections(p => ({ ...p, body: v }))}
-                  placeholder="The insight, story, or tutorial that delivers on the hook's promise…"
-                  rows={8}
-                />
-                <ScriptSection
-                  label="Call to Action"
-                  sublabel="What to do next"
-                  accent="emerald"
-                  value={sections.cta}
-                  onChange={v => setSections(p => ({ ...p, cta: v }))}
-                  placeholder="Follow for more. Comment your take. Save this for later…"
-                  rows={2}
-                />
-
-                {!hasContent && !loading && (
-                  <div className="mt-2 bg-indigo-50 border border-indigo-100 rounded-xl p-5 text-center">
-                    <Sparkles className="w-5 h-5 text-indigo-400 mx-auto mb-2" />
-                    <p className="text-xs font-semibold text-indigo-700">Ready to generate</p>
-                    <p className="text-[11px] text-indigo-500 mt-1">
-                      Hit "Generate Script" — the AI will use your Brand Identity &amp; ICP to write this strategically.
-                    </p>
-                    {brandIdentity.icp && (
-                      <p className="text-[11px] text-indigo-400 mt-2 italic">
-                        Context: {brandIdentity.icp.slice(0, 80)}…
-                      </p>
+                {showAnglePicker ? (
+                  <AngleCardsPanel
+                    cards={angleCards}
+                    loading={anglesLoading}
+                    isRegenerate={hasContent}
+                    currentAngle={chosenAngle}
+                    onPick={handleAnglePick}
+                    onSkip={handleAngleSkip}
+                  />
+                ) : (
+                  <>
+                    <ScriptSection
+                      label="Hook"
+                      sublabel="First 2 seconds — stop the scroll"
+                      accent="rose"
+                      value={sections.hook}
+                      onChange={v => setSections(p => ({ ...p, hook: v }))}
+                      placeholder="Your opening line that makes people freeze mid-scroll…"
+                      rows={3}
+                    />
+                    <ScriptSection
+                      label="Value Delivery"
+                      sublabel="The core message — earn the watch"
+                      accent="indigo"
+                      value={sections.body}
+                      onChange={v => setSections(p => ({ ...p, body: v }))}
+                      placeholder="The insight, story, or tutorial that delivers on the hook's promise…"
+                      rows={8}
+                    />
+                    <ScriptSection
+                      label="Call to Action"
+                      sublabel="What to do next"
+                      accent="emerald"
+                      value={sections.cta}
+                      onChange={v => setSections(p => ({ ...p, cta: v }))}
+                      placeholder="Follow for more. Comment your take. Save this for later…"
+                      rows={2}
+                    />
+                    {!hasContent && !loading && (
+                      <div className="mt-2 bg-indigo-50 border border-indigo-100 rounded-xl p-5 text-center">
+                        <Sparkles className="w-5 h-5 text-indigo-400 mx-auto mb-2" />
+                        <p className="text-xs font-semibold text-indigo-700">Ready to generate</p>
+                        <p className="text-[11px] text-indigo-500 mt-1">
+                          Click "Generate Script" — the AI will suggest 3 strategic angles first, then write your script.
+                        </p>
+                        {brandIdentity.icp && (
+                          <p className="text-[11px] text-indigo-400 mt-2 italic">
+                            Context: {brandIdentity.icp.slice(0, 80)}…
+                          </p>
+                        )}
+                      </div>
                     )}
-                  </div>
+                  </>
                 )}
               </div>
 
@@ -1015,6 +1115,130 @@ function SchedulePanel({
   );
 }
 
+/* ─── Angle Cards Panel ──────────────────────────────────────────────────── */
+
+function AngleCardsPanel({
+  cards, loading, isRegenerate, currentAngle, onPick, onSkip,
+}: {
+  cards: AngleCard[];
+  loading: boolean;
+  isRegenerate: boolean;
+  currentAngle: AngleCard | null;
+  onPick: (card: AngleCard) => void;
+  onSkip: () => void;
+}) {
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-14 gap-4">
+        <div className="relative">
+          <div className="w-12 h-12 rounded-2xl bg-indigo-100 flex items-center justify-center">
+            <Sparkles className="w-6 h-6 text-indigo-500" />
+          </div>
+          <div className="absolute -top-1 -right-1 w-4 h-4 bg-indigo-500 rounded-full flex items-center justify-center">
+            <Loader2 className="w-2.5 h-2.5 text-white animate-spin" />
+          </div>
+        </div>
+        <div className="text-center">
+          <p className="text-sm font-bold text-slate-800">Analysing your post…</p>
+          <p className="text-xs text-slate-500 mt-1">Finding the 3 sharpest angles for this content</p>
+        </div>
+        {/* Skeleton cards */}
+        <div className="w-full space-y-2.5 mt-2">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="rounded-xl border border-slate-100 bg-slate-50 p-4 animate-pulse">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-slate-200" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-3 bg-slate-200 rounded w-1/3" />
+                  <div className="h-3 bg-slate-200 rounded w-5/6" />
+                  <div className="h-2.5 bg-slate-100 rounded w-2/3" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (cards.length === 0) return null;
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-black text-slate-900">
+            {isRegenerate ? 'Try a different angle' : 'Choose your angle'}
+          </p>
+          <p className="text-[11px] text-slate-500 mt-0.5">
+            The AI will craft the full script from the frame you pick.
+            {isRegenerate && currentAngle && (
+              <span className="ml-1 text-indigo-600">Last used: {currentAngle.emoji} {currentAngle.type}</span>
+            )}
+          </p>
+        </div>
+        <button
+          onClick={onSkip}
+          className="shrink-0 flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-700 font-semibold transition-colors whitespace-nowrap"
+        >
+          Skip <ArrowRight className="w-3 h-3" />
+        </button>
+      </div>
+
+      {/* Cards */}
+      <div className="space-y-2.5">
+        {cards.map((card, i) => {
+          const isCurrent = currentAngle?.type === card.type;
+          return (
+            <button
+              key={i}
+              onClick={() => onPick(card)}
+              className={`w-full text-left p-4 rounded-xl border-2 transition-all group hover:shadow-md ${
+                isCurrent
+                  ? 'border-indigo-400 bg-indigo-50 shadow-sm'
+                  : 'border-slate-200 bg-white hover:border-indigo-300 hover:bg-indigo-50/40'
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg shrink-0 transition-colors ${
+                  isCurrent ? 'bg-indigo-100' : 'bg-slate-100 group-hover:bg-indigo-100'
+                }`}>
+                  {card.emoji}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={`text-[10px] font-black uppercase tracking-wider ${
+                      isCurrent ? 'text-indigo-700' : 'text-slate-600'
+                    }`}>{card.type}</span>
+                    {isCurrent && (
+                      <span className="text-[9px] font-bold bg-indigo-200 text-indigo-700 px-1.5 py-0.5 rounded-full">
+                        Last used
+                      </span>
+                    )}
+                  </div>
+                  <p className={`text-sm font-semibold leading-snug mb-1.5 italic ${
+                    isCurrent ? 'text-indigo-900' : 'text-slate-800'
+                  }`}>
+                    "{card.hook}"
+                  </p>
+                  <p className="text-[11px] text-slate-500 leading-relaxed">{card.description}</p>
+                  <p className={`text-[10px] font-bold mt-1.5 ${isCurrent ? 'text-indigo-600' : 'text-slate-400 group-hover:text-indigo-500'}`}>
+                    Best for: {card.bestFor}
+                  </p>
+                </div>
+                <ChevronRight className={`w-4 h-4 shrink-0 mt-0.5 transition-colors ${
+                  isCurrent ? 'text-indigo-400' : 'text-slate-300 group-hover:text-indigo-400'
+                }`} />
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /* ─── Script Section ─────────────────────────────────────────────────────── */
 
 function ScriptSection({
@@ -1080,19 +1304,69 @@ RULES:
 5. Never use filler phrases like "In today's video..."`;
 }
 
-function buildPrompt(post: Post, identity: BrandIdentity): string {
+function buildPrompt(post: Post, identity: BrandIdentity, angle?: AngleCard): string {
+  const angleBlock = angle
+    ? `\nCHOSEN ANGLE: ${angle.type} — ${angle.description}\nHOOK DIRECTION: Adapt (don't copy) this opening: "${angle.hook}"\nBuild the entire script leaning into the ${angle.type} frame.\n`
+    : `\nThe hook must reference the audience's ${identity.empathyMap.pains ? 'pain: ' + identity.empathyMap.pains.split('\n')[0] : 'core challenge'}.\n`;
+
   return `Write a short-form video script for:
 
 TITLE: "${post.title}"
 FORMAT: ${post.type}
 THEME: ${post.theme}
-
+${angleBlock}
 Respond ONLY with a valid JSON object (no markdown, no explanation):
 {
   "hook": "the opening 1-2 sentences that stop the scroll",
   "body": "the core value delivery — insight, story, or tutorial steps",
   "cta": "the closing call to action"
+}`;
 }
 
-The hook must reference the audience's ${identity.empathyMap.pains ? 'pain: ' + identity.empathyMap.pains.split('\n')[0] : 'core challenge'}.`;
+function buildAnglesPrompt(post: Post, identity: BrandIdentity): string {
+  return `Generate exactly 3 DISTINCT strategic angles for this short-form video post.
+
+POST TITLE: "${post.title}"
+FORMAT: ${post.type}
+THEME: ${post.theme}
+ICP: ${identity.icp || 'Not defined'}
+AUDIENCE PAINS: ${identity.empathyMap.pains || 'Not defined'}
+VOICE & TONE: ${identity.tone || 'Not defined'}
+
+Pick the 3 most strategic angles for this specific post from these archetypes:
+- Pain First: Open with the audience's core frustration to create immediate empathy
+- Transformation: Before/after personal story arc — "I used to X, then Y happened"
+- Direct Value: Tactical numbered list or step-by-step "here's exactly how to..."
+- Curiosity Gap: Open a loop the viewer must watch to close
+- Contrarian: Challenge a widely held belief in the niche
+- Social Proof: Lead with a striking data point, result, or validation
+- Identity: Speak directly to who they aspire to become
+- Urgency: Create FOMO or time-sensitive stakes
+
+Return ONLY this JSON (no markdown, no explanation):
+{
+  "angles": [
+    {
+      "type": "Pain First",
+      "emoji": "😤",
+      "hook": "One punchy sample hook sentence using this angle — make it feel real and specific",
+      "description": "One sentence on this angle's emotional strategy",
+      "bestFor": "Cold audience · Discovery feed"
+    },
+    {
+      "type": "Transformation",
+      "emoji": "🔄",
+      "hook": "...",
+      "description": "...",
+      "bestFor": "..."
+    },
+    {
+      "type": "Direct Value",
+      "emoji": "🎯",
+      "hook": "...",
+      "description": "...",
+      "bestFor": "..."
+    }
+  ]
+}`;
 }
