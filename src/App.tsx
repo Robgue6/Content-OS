@@ -10,6 +10,7 @@ import BrandIdentity from './components/BrandIdentity';
 import StrategyMatrix from './components/StrategyMatrix';
 import ContentCalendar from './components/ContentCalendar';
 import ScriptLab from './components/ScriptLab';
+import ScriptLabPage from './components/ScriptLabPage';
 import Settings from './components/Settings';
 import RoiTracker from './components/RoiTracker';
 import CompetitorIntel from './components/CompetitorIntel';
@@ -713,8 +714,20 @@ export default function App() {
                   onDeletePost={handleDeletePost} onOpenLab={openLab}
                 />
               )}
-              {activeTab === 'lab' && !scriptLabPostId && (
-                <LabPicker posts={posts} onSelect={openLab} onNavigate={navigate} />
+              {activeTab === 'lab' && (
+                <ScriptLabPage
+                  posts={posts}
+                  scripts={scripts}
+                  brandIdentity={brandIdentity}
+                  language={language}
+                  agentActions={agentActions}
+                  initialPostId={scriptLabPostId}
+                  onSave={saveScript}
+                  onSchedule={async (postId, postDate, filmingDate) => {
+                    await handleUpdatePost(postId, { date: postDate, filmingDate, status: 'SCHEDULED' });
+                  }}
+                  onClearInitialPost={() => setScriptLabPostId(null)}
+                />
               )}
               {activeTab === 'roi' && (
                 <RoiTracker
@@ -756,8 +769,8 @@ export default function App() {
         </main>
       </div>
 
-      {/* Script Lab modal (global) */}
-      {scriptLabPostId && (
+      {/* Script Lab modal — only for overlay use from matrix (not the lab tab itself) */}
+      {scriptLabPostId && activeTab !== 'lab' && (
         <ScriptLab
           post={activePost}
           existingScript={activeScript}
@@ -884,51 +897,3 @@ STRICT RULES
 - Keep "message" concise; the actions ARE the work`;
 }
 
-/* ─── Lab Picker ─────────────────────────────────────────────────────────── */
-
-function LabPicker({ posts, onSelect, onNavigate }: {
-  posts: Post[];
-  onSelect: (id: string) => void;
-  onNavigate: (tab: NavTab) => void;
-}) {
-  return (
-    <div className="p-6 max-w-3xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Script Lab</h1>
-        <p className="text-slate-500 text-sm mt-1">Select a post to open the AI scriptwriting workspace.</p>
-      </div>
-      {posts.length === 0 ? (
-        <div className="bg-white rounded-xl border border-dashed border-slate-300 p-12 text-center space-y-3">
-          <FlaskConical className="w-8 h-8 text-slate-300 mx-auto" />
-          <p className="text-slate-500 text-sm font-medium">No posts in your calendar yet.</p>
-          <button
-            onClick={() => onNavigate('calendar')}
-            className="text-sm text-indigo-600 hover:text-indigo-800 font-medium underline"
-          >
-            Go to Calendar to add posts
-          </button>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {posts.map(post => (
-            <button key={post.id} onClick={() => onSelect(post.id)}
-              className="w-full text-left bg-white rounded-xl border border-slate-200 px-5 py-4 hover:border-indigo-300 hover:shadow-md transition-all group"
-            >
-              <div className="flex items-center gap-3">
-                <FlaskConical className="w-4 h-4 text-slate-300 group-hover:text-indigo-500 transition-colors shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-slate-900 truncate">{post.title}</p>
-                  <p className="text-xs text-slate-400 mt-0.5">{post.theme} · {post.type} · {post.date}</p>
-                </div>
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full shrink-0 ${post.status === 'IDEA' ? 'bg-slate-100 text-slate-600' :
-                  post.status === 'DRAFT' ? 'bg-indigo-100 text-indigo-700' :
-                    'bg-emerald-100 text-emerald-700'
-                  }`}>{post.status}</span>
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
