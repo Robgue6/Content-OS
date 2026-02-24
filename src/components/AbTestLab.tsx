@@ -114,18 +114,18 @@ function MetricRow({ label, icon, valA, valB, fmtA, fmtB, higherIsBetter = true 
   const bWins = (d.winner === 'B' && higherIsBetter) || (d.winner === 'A' && !higherIsBetter);
   return (
     <tr className="border-b border-slate-100 last:border-0">
-      <td className="py-2 pr-3 text-xs text-slate-500 whitespace-nowrap">
+      <td className="py-2.5 pl-4 pr-3 text-xs text-slate-500 whitespace-nowrap">
         <div className="flex items-center gap-1.5">{icon}{label}</div>
       </td>
-      <td className={`py-2 px-3 text-sm font-semibold text-center ${aWins ? 'text-emerald-600' : 'text-slate-700'}`}>
+      <td className={`py-2.5 px-4 text-sm font-semibold text-center ${aWins ? 'text-emerald-600' : 'text-slate-700'}`}>
         {fmtA}
         {aWins && d.pct > 0 && <span className="ml-1 text-[10px] text-emerald-500">↑</span>}
       </td>
-      <td className={`py-2 px-3 text-sm font-semibold text-center ${bWins ? 'text-emerald-600' : 'text-slate-700'}`}>
+      <td className={`py-2.5 px-4 text-sm font-semibold text-center ${bWins ? 'text-emerald-600' : 'text-slate-700'}`}>
         {fmtB}
         {bWins && d.pct > 0 && <span className="ml-1 text-[10px] text-emerald-500">↑</span>}
       </td>
-      <td className="py-2 pl-3 text-[11px] text-slate-400 text-right whitespace-nowrap">
+      <td className="py-2.5 pl-3 pr-4 text-[11px] text-slate-400 text-right whitespace-nowrap">
         {d.winner !== 'tie' && d.pct > 0.5
           ? <span className={`font-medium ${aWins ? 'text-emerald-600' : bWins ? 'text-emerald-600' : ''}`}>
               {d.winner} +{d.pct.toFixed(0)}%
@@ -595,13 +595,13 @@ function TestDetail({
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-100">
-                  <th className="py-2 pr-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wide pl-4">Metric</th>
-                  <th className="py-2 px-3 text-center text-[11px] font-black text-slate-700 bg-slate-50">A</th>
-                  <th className="py-2 px-3 text-center text-[11px] font-black text-emerald-700 bg-emerald-50">B</th>
-                  <th className="py-2 pl-3 text-right text-[11px] font-semibold text-slate-400 uppercase tracking-wide pr-4">Delta</th>
+                  <th className="py-2.5 pl-4 pr-3 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Metric</th>
+                  <th className="py-2.5 px-4 text-center text-[11px] font-black text-slate-700 bg-slate-50 w-24">A</th>
+                  <th className="py-2.5 px-4 text-center text-[11px] font-black text-emerald-700 bg-emerald-50 w-24">B</th>
+                  <th className="py-2.5 pl-3 pr-4 text-right text-[11px] font-semibold text-slate-400 uppercase tracking-wide w-20">Delta</th>
                 </tr>
               </thead>
-              <tbody className="px-4">
+              <tbody>
                 {resultA && resultB && (() => {
                   const a = resultA, b = resultB;
                   return (
