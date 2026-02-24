@@ -3,11 +3,13 @@ import {
   ArrowLeft, Telescope, Search, Loader2, TrendingUp, MessageSquare,
   Heart, Eye, Plus, Trash2, CheckCircle, AlertCircle, Lightbulb,
   ChevronRight, BarChart2, Target, XCircle, Microscope, Code2, Brain, Layers,
+  Users, Hash, FileText, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import OpenAI from 'openai';
 import type {
   BrandIdentity, CompetitorReport, CompetitorPost, CompetitorComment,
   CompetitorReportData, IntelActionablePost, MatrixIdea, AppLanguage,
+  CommentAnalysis,
 } from '../types';
 
 // ── Apify API helpers ──────────────────────────────────────────────────────
@@ -191,11 +193,82 @@ Rules:
 - Reference specific things from the posts and comments — no generic advice`;
 }
 
+// ── Comment Analysis prompt ────────────────────────────────────────────────
+
+function buildCommentAnalysisPrompt(
+  handle: string,
+  topPosts: CompetitorPost[],
+  brandIdentity: BrandIdentity,
+  themes: string[],
+  contentTypes: string[],
+): string {
+  const allComments = topPosts.map((post, i) => {
+    const lines = post.comments.map(c => `  - "${c.text}"`).join('\n');
+    return `POST ${i + 1} (${post.likesCount.toLocaleString()} likes · ${post.commentsCount.toLocaleString()} comments):\n${lines || '  (no comments scraped)'}`;
+  }).join('\n\n');
+
+  const totalComments = topPosts.reduce((sum, p) => sum + p.comments.length, 0);
+
+  return `You are an expert community analyst and content strategist. Analyze ${totalComments} scraped comments from @${handle}'s top Instagram posts to extract deep audience intelligence for a brand creator.
+
+=== USER'S BRAND IDENTITY ===
+ICP: ${brandIdentity.icp || 'Not defined'}
+Positioning: ${brandIdentity.positioning || 'Not defined'}
+Voice & Tone: ${brandIdentity.tone || 'Not defined'}
+Audience Pains: ${brandIdentity.empathyMap?.pains || 'Not defined'}
+Audience Gains: ${brandIdentity.empathyMap?.gains || 'Not defined'}
+Audience Fears: ${brandIdentity.empathyMap?.fears || 'Not defined'}
+Audience Hopes: ${brandIdentity.empathyMap?.hopes || 'Not defined'}
+Content Themes: ${themes.join(', ') || 'Not set'}
+Content Formats: ${contentTypes.join(', ') || 'Not set'}
+
+=== ALL SCRAPED COMMENTS ===
+${allComments}
+
+=== TASK ===
+Return ONLY a valid JSON object with this exact structure:
+{
+  "sentimentSummary": "2-3 sentence paragraph on the emotional tone, engagement quality, and what drives this community",
+  "audienceVocabulary": ["word or phrase 1", "word or phrase 2"],
+  "recurringThemes": [
+    {
+      "category": "pain_point",
+      "insight": "Clear statement of the recurring insight",
+      "quotes": ["exact or near-exact comment excerpt", "another quote"],
+      "frequency": "high"
+    }
+  ],
+  "contentGaps": ["Specific topic or angle the audience keeps asking for but isn't getting", "..."],
+  "scriptedIdeas": [
+    {
+      "title": "Post title in the user's brand voice",
+      "hook": "Opening line — the exact first words of the video (make it punchy, under 15 words)",
+      "bodyPoints": ["Key point 1 with specifics", "Key point 2", "Key point 3"],
+      "cta": "Specific, single call to action",
+      "why": "Why this will resonate with the user's ICP based on the comments",
+      "theme": "MUST be exactly one of: ${themes.join(' | ')}",
+      "type": "MUST be exactly one of: ${contentTypes.join(' | ')}"
+    }
+  ]
+}
+
+Rules:
+- audienceVocabulary: 8-12 specific words/phrases this audience uses repeatedly — great for captions and hooks
+- recurringThemes: 4-6 items, each a different category. category MUST be one of: pain_point | desire | question | praise | objection
+- quotes: use ACTUAL text from the comments provided — do not fabricate
+- frequency: "high" = appears in many comments, "medium" = several, "low" = notable but rare
+- contentGaps: 3-4 specific unmet needs expressed by commenters — what they want but aren't getting
+- scriptedIdeas: exactly 5 fully written, ready-to-use post ideas using the audience's own language
+- bodyPoints: 3-4 specific, substantive bullet points — not placeholders, real content the creator can say
+- theme/type for scriptedIdeas MUST exactly match from the provided lists
+- Ground everything in the actual comments — no generic marketing advice`;
+}
+
 // ── Component ─────────────────────────────────────────────────────────────
 
 type IntelView = 'list' | 'new' | 'loading' | 'report';
 type LoadingStep = 'posts' | 'comments' | 'analysis';
-type ReportTab = 'overview' | 'posts' | 'reverse' | 'actions';
+type ReportTab = 'overview' | 'posts' | 'reverse' | 'audience' | 'actions';
 
 const STEP_LABELS: Record<LoadingStep, string> = {
   posts: 'Fetching recent posts from Instagram…',
@@ -213,13 +286,14 @@ interface Props {
   language: AppLanguage;
   onAddReport: (report: Omit<CompetitorReport, 'id' | 'createdAt'>) => Promise<void>;
   onDeleteReport: (id: string) => Promise<void>;
+  onUpdateReport: (id: string, reportData: CompetitorReportData) => Promise<void>;
   onAddToMatrix: (idea: Omit<MatrixIdea, 'id'>) => Promise<void>;
   onNavigateToMatrix: () => void;
 }
 
 export default function CompetitorIntel({
   brandIdentity, themes, contentTypes, reports, apifyApiKey,
-  onAddReport, onDeleteReport, onAddToMatrix, onNavigateToMatrix,
+  onAddReport, onDeleteReport, onUpdateReport, onAddToMatrix, onNavigateToMatrix,
 }: Props) {
   const [view, setView] = useState<IntelView>('list');
   const [handle, setHandle] = useState('');
@@ -228,6 +302,9 @@ export default function CompetitorIntel({
   const [activeReport, setActiveReport] = useState<CompetitorReport | null>(null);
   const [reportTab, setReportTab] = useState<ReportTab>('overview');
   const [addedToMatrix, setAddedToMatrix] = useState<Set<number>>(new Set());
+  const [commentAnalysisLoading, setCommentAnalysisLoading] = useState(false);
+  const [commentAnalysisError, setCommentAnalysisError] = useState('');
+  const [expandedScript, setExpandedScript] = useState<number | null>(null);
 
   const noKey = !apifyApiKey;
 
@@ -307,15 +384,20 @@ export default function CompetitorIntel({
 
       const aiResponse = await openai.chat.completions.create({
         model: 'arcee-ai/trinity-large-preview:free',
+        response_format: { type: 'json_object' },
         messages: [
-          { role: 'system', content: 'You are a strategic content analyst. Return only valid JSON, no markdown fences.' },
+          { role: 'system', content: 'You are a strategic content analyst. Return only valid JSON. No markdown, no preamble, no explanation — only the JSON object.' },
           { role: 'user', content: prompt },
         ],
       });
 
       const rawContent = aiResponse.choices[0].message.content ?? '{}';
-      // Strip possible markdown fences
-      const jsonStr = rawContent.replace(/^```json?\n?/i, '').replace(/\n?```$/i, '').trim();
+      // Extract the outermost JSON object — handles fences, preamble, and trailing text
+      const start = rawContent.indexOf('{');
+      const end = rawContent.lastIndexOf('}');
+      const jsonStr = start !== -1 && end > start
+        ? rawContent.slice(start, end + 1)
+        : rawContent.replace(/^```json?\n?/i, '').replace(/\n?```$/i, '').trim();
       const reportData = JSON.parse(jsonStr) as CompetitorReportData;
 
       const newReport: Omit<CompetitorReport, 'id' | 'createdAt'> = {
@@ -348,7 +430,60 @@ export default function CompetitorIntel({
     setActiveReport(report);
     setReportTab('overview');
     setAddedToMatrix(new Set());
+    setCommentAnalysisError('');
+    setExpandedScript(null);
     setView('report');
+  };
+
+  const runCommentAnalysis = async () => {
+    if (!activeReport) return;
+    const totalComments = activeReport.topPosts.reduce((s, p) => s + p.comments.length, 0);
+    if (totalComments === 0) {
+      setCommentAnalysisError('No comments were scraped for this report. Re-run the analysis to capture comments.');
+      return;
+    }
+    setCommentAnalysisLoading(true);
+    setCommentAnalysisError('');
+    try {
+      const orKey = import.meta.env.VITE_OPENROUTER_API_KEY as string;
+      const openai = new OpenAI({
+        baseURL: 'https://openrouter.ai/api/v1',
+        apiKey: orKey,
+        dangerouslyAllowBrowser: true,
+      });
+      const prompt = buildCommentAnalysisPrompt(
+        activeReport.competitorHandle,
+        activeReport.topPosts,
+        brandIdentity,
+        themes,
+        contentTypes,
+      );
+      const aiResponse = await openai.chat.completions.create({
+        model: 'arcee-ai/trinity-large-preview:free',
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: 'You are a community analyst. Return only valid JSON, no markdown, no preamble.' },
+          { role: 'user', content: prompt },
+        ],
+      });
+      const raw = aiResponse.choices[0].message.content ?? '{}';
+      const s = raw.indexOf('{'), e = raw.lastIndexOf('}');
+      const commentAnalysis = JSON.parse(s !== -1 && e > s ? raw.slice(s, e + 1) : raw) as CommentAnalysis;
+
+      const updatedReportData: CompetitorReportData = { ...activeReport.report, commentAnalysis };
+      setActiveReport(prev => prev ? { ...prev, report: updatedReportData } : prev);
+
+      // Persist — find real DB ID (activeReport may have id='temp' right after creation)
+      const realId = reports.find(r => r.competitorHandle === activeReport.competitorHandle)?.id;
+      if (realId && realId !== 'temp') {
+        await onUpdateReport(realId, updatedReportData);
+      }
+    } catch (e) {
+      console.error('Comment analysis failed', e);
+      setCommentAnalysisError(e instanceof Error ? e.message : 'Analysis failed. Please try again.');
+    } finally {
+      setCommentAnalysisLoading(false);
+    }
   };
 
   const addIdeaToMatrix = async (idea: IntelActionablePost, index: number) => {
@@ -514,7 +649,7 @@ export default function CompetitorIntel({
 
         {/* Tabs */}
         <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit">
-          {(['overview', 'posts', 'reverse', 'actions'] as ReportTab[]).map(tab => (
+          {(['overview', 'posts', 'reverse', 'audience', 'actions'] as ReportTab[]).map(tab => (
             <button
               key={tab}
               onClick={() => setReportTab(tab)}
@@ -522,7 +657,11 @@ export default function CompetitorIntel({
                 reportTab === tab ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
               }`}
             >
-              {tab === 'overview' ? 'Strategy' : tab === 'posts' ? 'Top Posts' : tab === 'reverse' ? 'Reverse Eng.' : 'Action Plan'}
+              {tab === 'overview' ? 'Strategy'
+                : tab === 'posts' ? 'Top Posts'
+                : tab === 'reverse' ? 'Reverse Eng.'
+                : tab === 'audience' ? 'Audience Voice'
+                : 'Action Plan'}
             </button>
           ))}
         </div>
@@ -807,6 +946,227 @@ export default function CompetitorIntel({
                 <p className="text-slate-500 font-medium text-sm">Reverse engineering not available</p>
                 <p className="text-slate-400 text-xs mt-1">Run a new analysis to unlock the full Content DNA breakdown.</p>
               </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Tab: Audience Voice ── */}
+        {reportTab === 'audience' && (
+          <div className="space-y-6">
+            {!activeReport.report.commentAnalysis ? (
+              /* Empty state — trigger analysis */
+              <div className="bg-white rounded-xl border border-slate-200 p-10 text-center space-y-5">
+                <div className="w-14 h-14 mx-auto bg-indigo-100 rounded-2xl flex items-center justify-center">
+                  <Users className="w-7 h-7 text-indigo-500" />
+                </div>
+                <div>
+                  <p className="text-slate-800 font-semibold text-base">Deep Comment Analysis</p>
+                  <p className="text-slate-500 text-sm mt-1 max-w-sm mx-auto leading-relaxed">
+                    Run AI analysis on all {activeReport.topPosts.reduce((s, p) => s + p.comments.length, 0)} scraped comments to uncover audience psychology, content gaps, and 5 fully scripted post ideas.
+                  </p>
+                </div>
+                {commentAnalysisError && (
+                  <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 rounded-xl p-3 text-left max-w-sm mx-auto">
+                    <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                    <p className="text-xs text-rose-700">{commentAnalysisError}</p>
+                  </div>
+                )}
+                <button
+                  onClick={runCommentAnalysis}
+                  disabled={commentAnalysisLoading}
+                  className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-50"
+                >
+                  {commentAnalysisLoading
+                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Analyzing comments…</>
+                    : <><Users className="w-4 h-4" /> Analyze Audience Voice</>}
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* Sentiment Summary */}
+                <div className="bg-white rounded-xl border border-slate-200 p-5">
+                  <div className="flex items-center gap-2 mb-3">
+                    <MessageSquare className="w-4 h-4 text-indigo-500" />
+                    <h2 className="text-sm font-semibold text-slate-700">Community Sentiment</h2>
+                  </div>
+                  <p className="text-sm text-slate-700 leading-relaxed">{activeReport.report.commentAnalysis.sentimentSummary}</p>
+                </div>
+
+                {/* Audience Vocabulary */}
+                {(activeReport.report.commentAnalysis.audienceVocabulary?.length ?? 0) > 0 && (
+                  <div className="bg-white rounded-xl border border-slate-200 p-5">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Hash className="w-4 h-4 text-violet-500" />
+                      <h2 className="text-sm font-semibold text-slate-700">Audience Vocabulary — use these words in your captions & hooks</h2>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {activeReport.report.commentAnalysis.audienceVocabulary.map((word, i) => (
+                        <span key={i} className="px-3 py-1.5 bg-violet-50 border border-violet-200 text-violet-800 rounded-full text-xs font-medium">
+                          {word}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Recurring Themes */}
+                {(activeReport.report.commentAnalysis.recurringThemes?.length ?? 0) > 0 && (
+                  <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+                    <div className="flex items-center gap-2 mb-1">
+                      <TrendingUp className="w-4 h-4 text-orange-500" />
+                      <h2 className="text-sm font-semibold text-slate-700">Recurring Themes from Comments</h2>
+                    </div>
+                    {activeReport.report.commentAnalysis.recurringThemes.map((theme, i) => {
+                      const catColors: Record<string, string> = {
+                        pain_point: 'bg-rose-100 text-rose-700',
+                        desire: 'bg-emerald-100 text-emerald-700',
+                        question: 'bg-blue-100 text-blue-700',
+                        praise: 'bg-amber-100 text-amber-700',
+                        objection: 'bg-orange-100 text-orange-700',
+                      };
+                      const freqColors: Record<string, string> = {
+                        high: 'bg-rose-50 text-rose-600 border-rose-200',
+                        medium: 'bg-amber-50 text-amber-600 border-amber-200',
+                        low: 'bg-slate-50 text-slate-500 border-slate-200',
+                      };
+                      const catLabel: Record<string, string> = {
+                        pain_point: 'Pain Point', desire: 'Desire', question: 'Question',
+                        praise: 'Praise', objection: 'Objection',
+                      };
+                      return (
+                        <div key={i} className="border-l-2 border-indigo-300 pl-4 space-y-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${catColors[theme.category] ?? 'bg-slate-100 text-slate-600'}`}>
+                              {catLabel[theme.category] ?? theme.category}
+                            </span>
+                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${freqColors[theme.frequency] ?? 'bg-slate-50 text-slate-500 border-slate-200'}`}>
+                              {theme.frequency} frequency
+                            </span>
+                          </div>
+                          <p className="text-sm font-medium text-slate-900">{theme.insight}</p>
+                          {theme.quotes?.length > 0 && (
+                            <div className="space-y-1">
+                              {theme.quotes.map((q, qi) => (
+                                <p key={qi} className="text-xs text-slate-500 italic border-l-2 border-slate-200 pl-2">"{q}"</p>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Content Gaps */}
+                {(activeReport.report.commentAnalysis.contentGaps?.length ?? 0) > 0 && (
+                  <div className="bg-white rounded-xl border border-slate-200 p-5">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Target className="w-4 h-4 text-rose-500" />
+                      <h2 className="text-sm font-semibold text-slate-700">Content Gaps — what the audience wants but isn't getting</h2>
+                    </div>
+                    <div className="space-y-2">
+                      {activeReport.report.commentAnalysis.contentGaps.map((gap, i) => (
+                        <div key={i} className="flex items-start gap-2.5">
+                          <div className="w-5 h-5 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">{i + 1}</div>
+                          <p className="text-sm text-slate-700 leading-relaxed">{gap}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Scripted Post Ideas */}
+                {(activeReport.report.commentAnalysis.scriptedIdeas?.length ?? 0) > 0 && (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-emerald-600" />
+                      <h2 className="text-sm font-semibold text-slate-700">5 Scripted Post Ideas — ready to film</h2>
+                    </div>
+                    {activeReport.report.commentAnalysis.scriptedIdeas.map((idea, i) => {
+                      const isOpen = expandedScript === i;
+                      return (
+                        <div key={i} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                          {/* Header row — always visible */}
+                          <button
+                            onClick={() => setExpandedScript(isOpen ? null : i)}
+                            className="w-full flex items-start gap-3 p-5 text-left hover:bg-slate-50 transition-colors"
+                          >
+                            <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
+                              {i + 1}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-slate-900 leading-tight">{idea.title}</p>
+                              <p className="text-xs text-slate-500 mt-1 italic line-clamp-1">"{idea.hook}"</p>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0 mt-0.5">
+                              <span className="text-xs px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full font-medium">{idea.theme}</span>
+                              <span className="text-xs px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-full font-medium">{idea.type}</span>
+                              {isOpen ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                            </div>
+                          </button>
+
+                          {/* Expanded script */}
+                          {isOpen && (
+                            <div className="border-t border-slate-100 p-5 space-y-4 bg-slate-50">
+                              {/* Hook */}
+                              <div className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-xl p-4">
+                                <p className="text-xs font-semibold text-orange-600 uppercase tracking-wide mb-1">Hook — first 3 seconds</p>
+                                <p className="text-sm text-slate-900 font-medium italic">"{idea.hook}"</p>
+                              </div>
+
+                              {/* Body */}
+                              {idea.bodyPoints?.length > 0 && (
+                                <div>
+                                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Body</p>
+                                  <div className="space-y-2">
+                                    {idea.bodyPoints.map((pt, pi) => (
+                                      <div key={pi} className="flex items-start gap-2.5">
+                                        <span className="text-xs font-bold text-indigo-500 shrink-0 mt-0.5">{pi + 1}.</span>
+                                        <p className="text-sm text-slate-700 leading-relaxed">{pt}</p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* CTA */}
+                              <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4">
+                                <p className="text-xs font-semibold text-indigo-600 uppercase tracking-wide mb-1">CTA</p>
+                                <p className="text-sm text-slate-800">{idea.cta}</p>
+                              </div>
+
+                              {/* Why */}
+                              <div className="flex items-start gap-2 text-xs text-slate-500">
+                                <Lightbulb className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                                <p>{idea.why}</p>
+                              </div>
+
+                              {/* Add to matrix */}
+                              <button
+                                onClick={() => onAddToMatrix({ theme: idea.theme, type: idea.type, title: idea.title, done: false })}
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 transition-colors"
+                              >
+                                <Plus className="w-3 h-3" /> Add to Matrix
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Re-run button */}
+                <button
+                  onClick={() => {
+                    setActiveReport(prev => prev ? { ...prev, report: { ...prev.report, commentAnalysis: undefined } } : prev);
+                    setExpandedScript(null);
+                  }}
+                  className="text-xs text-slate-400 hover:text-slate-600 transition-colors"
+                >
+                  Re-run analysis
+                </button>
+              </>
             )}
           </div>
         )}

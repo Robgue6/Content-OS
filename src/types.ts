@@ -230,6 +230,33 @@ export interface ReplicationFormula {
   exampleHook: string;
 }
 
+export type CommentInsightCategory = 'pain_point' | 'desire' | 'question' | 'praise' | 'objection';
+
+export interface CommentInsight {
+  category: CommentInsightCategory;
+  insight: string;
+  quotes: string[];
+  frequency: 'high' | 'medium' | 'low';
+}
+
+export interface ScriptedPostIdea {
+  title: string;
+  hook: string;
+  bodyPoints: string[];
+  cta: string;
+  why: string;
+  theme: string;
+  type: string;
+}
+
+export interface CommentAnalysis {
+  sentimentSummary: string;
+  audienceVocabulary: string[];
+  recurringThemes: CommentInsight[];
+  contentGaps: string[];
+  scriptedIdeas: ScriptedPostIdea[];
+}
+
 export interface CompetitorReportData {
   overallAnalysis: string;
   audienceSignals: string[];
@@ -239,6 +266,7 @@ export interface CompetitorReportData {
   contentDNA?: ContentDNA;
   postBreakdowns?: PostHookBreakdown[];
   replicationFormula?: ReplicationFormula;
+  commentAnalysis?: CommentAnalysis;
 }
 
 export interface CompetitorReport {

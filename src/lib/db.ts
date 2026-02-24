@@ -484,6 +484,14 @@ export async function deleteCompetitorReport(id: string): Promise<void> {
   if (error) console.error('deleteCompetitorReport', error);
 }
 
+export async function updateCompetitorReport(id: string, reportData: CompetitorReportData): Promise<void> {
+  const { error } = await supabase
+    .from('competitor_reports')
+    .update({ report: reportData })
+    .eq('id', id);
+  if (error) console.error('updateCompetitorReport', error);
+}
+
 // ── Shared Data (viewer, no auth required) ─────────────────────────────────
 
 // ── A/B Tests ──────────────────────────────────────────────────────────────

@@ -26,7 +26,7 @@ import { supabase } from './lib/supabase';
 import * as db from './lib/db';
 import * as analytics from './lib/analytics';
 
-import type { AppState, NavTab, Post, Script, MatrixIdea, RoiCampaign, RoiEntry, BrandIdentity as BrandIdentityType, AppLanguage, ChatMessage, ShareLink, CompetitorReport, AgentAction, AbTest, AbTestResult } from './types';
+import type { AppState, NavTab, Post, Script, MatrixIdea, RoiCampaign, RoiEntry, BrandIdentity as BrandIdentityType, AppLanguage, ChatMessage, ShareLink, CompetitorReport, CompetitorReportData, AgentAction, AbTest, AbTestResult } from './types';
 import AbTestLab from './components/AbTestLab';
 
 const DEFAULT_BRAND: BrandIdentityType = {
@@ -480,6 +480,10 @@ export default function App() {
     await db.deleteCompetitorReport(id);
     analytics.trackIntelReportDeleted();
   };
+  const updateCompetitorReport = async (id: string, reportData: CompetitorReportData) => {
+    setCompetitorReports(prev => prev.map(r => r.id === id ? { ...r, report: reportData } : r));
+    await db.updateCompetitorReport(id, reportData);
+  };
   const undoAgentAction = async (action: AgentAction) => {
     setAgentActions(prev => prev.filter(a => a.id !== action.id));
     await db.deleteAgentAction(action.id);
@@ -797,6 +801,7 @@ export default function App() {
                   language={language}
                   onAddReport={addCompetitorReport}
                   onDeleteReport={deleteCompetitorReport}
+                  onUpdateReport={updateCompetitorReport}
                   onAddToMatrix={addIdea}
                   onNavigateToMatrix={() => navigate('matrix')}
                 />
