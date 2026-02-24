@@ -204,12 +204,39 @@ export interface IntelActionablePost {
   angle: string;
 }
 
+export interface PostHookBreakdown {
+  postIndex: number;
+  hookFormula: string;
+  hookText: string;
+  psychologicalTrigger: string;
+  structureArc: string;
+  whyItWorked: string;
+}
+
+export interface ContentDNA {
+  dominantHookType: string;
+  emotionalArc: string;
+  pacingPattern: string;
+  ctaStyle: string;
+  uniqueFormula: string;
+}
+
+export interface ReplicationFormula {
+  templateName: string;
+  template: string;
+  adaptedForYourBrand: string;
+  exampleHook: string;
+}
+
 export interface CompetitorReportData {
   overallAnalysis: string;
   audienceSignals: string[];
   whatToDo: IntelTactic[];
   whatNotToDo: IntelAvoidance[];
   actionablePosts: IntelActionablePost[];
+  contentDNA?: ContentDNA;
+  postBreakdowns?: PostHookBreakdown[];
+  replicationFormula?: ReplicationFormula;
 }
 
 export interface CompetitorReport {

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   ArrowLeft, Telescope, Search, Loader2, TrendingUp, MessageSquare,
   Heart, Eye, Plus, Trash2, CheckCircle, AlertCircle, Lightbulb,
-  ChevronRight, BarChart2, Target, XCircle, FlaskConical, Calendar,
+  ChevronRight, BarChart2, Target, XCircle, Microscope, Code2, Brain, Layers,
 } from 'lucide-react';
 import OpenAI from 'openai';
 import type {
@@ -104,7 +104,7 @@ Top comments (${post.comments.length} scraped):
 ${comments || '  (none)'}`.trim();
   }).join('\n\n---\n\n');
 
-  return `You are a strategic content analyst. Analyze the top-performing Instagram posts from @${handle} for a brand creator.
+  return `You are a strategic content analyst and reverse engineering expert. Analyze the top-performing Instagram posts from @${handle} for a brand creator.
 
 === USER'S BRAND IDENTITY ===
 ICP (Ideal Customer Profile): ${brandIdentity.icp || 'Not defined'}
@@ -149,7 +149,30 @@ Return ONLY a valid JSON object with this exact structure (no markdown, no pream
       "type": "MUST be exactly one of: ${contentTypes.join(' | ')}",
       "angle": "Your unique differentiating angle vs the competitor"
     }
-  ]
+  ],
+  "contentDNA": {
+    "dominantHookType": "The hook pattern repeated across their top posts e.g. 'Contrarian claim + specific statistic'",
+    "emotionalArc": "The typical emotional journey their content creates e.g. 'Fear → Curiosity → Insight → Relief'",
+    "pacingPattern": "Content rhythm and delivery style e.g. 'One punchy point per second, no filler, hard cuts'",
+    "ctaStyle": "How they typically close content and drive action",
+    "uniqueFormula": "Their repeatable secret sauce in one sentence — what makes every top post work"
+  },
+  "postBreakdowns": [
+    {
+      "postIndex": 1,
+      "hookFormula": "Hook type classification e.g. 'Pain point + contrarian twist + specific number'",
+      "hookText": "The exact or closely paraphrased opening line from the caption",
+      "psychologicalTrigger": "Primary psychological mechanism e.g. 'Loss aversion + curiosity gap'",
+      "structureArc": "Full content arc e.g. 'Problem → Agitation → Unexpected insight → Social proof → CTA'",
+      "whyItWorked": "Psychological explanation for why this specific post drove high engagement"
+    }
+  ],
+  "replicationFormula": {
+    "templateName": "A catchy name for this structural pattern e.g. 'The Pain-First Proof Formula'",
+    "template": "Step-by-step fill-in-the-blank template e.g. '[State their biggest fear] → [Agitate with surprising detail] → [Deliver unexpected insight] → [Back with evidence] → [One clear CTA]'",
+    "adaptedForYourBrand": "How to apply this exact template to the user's specific ICP, positioning and tone",
+    "exampleHook": "A concrete ready-to-use opening hook written specifically for the user's brand voice and ICP"
+  }
 }
 
 Rules:
@@ -157,6 +180,9 @@ Rules:
 - whatNotToDo: 2-3 patterns the competitor uses that DON'T fit this user's brand — be specific and honest
 - actionablePosts: exactly 5 ideas adapting the competitor's winning formula to this user's brand
 - theme/type for actionablePosts MUST exactly match from the provided lists
+- postBreakdowns: one entry per post analyzed (${topPosts.length} total), postIndex is 1-based
+- contentDNA and replicationFormula must be grounded in THESE specific posts, not generic platitudes
+- replicationFormula.exampleHook must be written in the user's brand voice targeting their specific ICP
 - Reference specific things from the posts and comments — no generic advice`;
 }
 
@@ -164,7 +190,7 @@ Rules:
 
 type IntelView = 'list' | 'new' | 'loading' | 'report';
 type LoadingStep = 'posts' | 'comments' | 'analysis';
-type ReportTab = 'overview' | 'posts' | 'actions';
+type ReportTab = 'overview' | 'posts' | 'reverse' | 'actions';
 
 const STEP_LABELS: Record<LoadingStep, string> = {
   posts: 'Fetching recent posts from Instagram…',
@@ -483,7 +509,7 @@ export default function CompetitorIntel({
 
         {/* Tabs */}
         <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit">
-          {(['overview', 'posts', 'actions'] as ReportTab[]).map(tab => (
+          {(['overview', 'posts', 'reverse', 'actions'] as ReportTab[]).map(tab => (
             <button
               key={tab}
               onClick={() => setReportTab(tab)}
@@ -491,7 +517,7 @@ export default function CompetitorIntel({
                 reportTab === tab ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
               }`}
             >
-              {tab === 'overview' ? 'Strategy' : tab === 'posts' ? 'Top Posts' : 'Action Plan'}
+              {tab === 'overview' ? 'Strategy' : tab === 'posts' ? 'Top Posts' : tab === 'reverse' ? 'Reverse Eng.' : 'Action Plan'}
             </button>
           ))}
         </div>
@@ -565,60 +591,201 @@ export default function CompetitorIntel({
         {reportTab === 'posts' && (
           <div className="space-y-4">
             {topPosts.map((post, i) => (
-              <div key={post.id} className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center text-xs font-bold shrink-0">
-                      #{i + 1}
+              <div key={post.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                <div className="flex flex-col lg:flex-row">
+                  {/* Instagram embed */}
+                  {post.shortCode && (
+                    <div className="lg:w-80 shrink-0 bg-slate-50 border-b lg:border-b-0 lg:border-r border-slate-200 flex items-center justify-center p-4">
+                      <iframe
+                        src={`https://www.instagram.com/p/${post.shortCode}/embed/`}
+                        width="300"
+                        height="380"
+                        frameBorder="0"
+                        scrolling="no"
+                        allowTransparency={true}
+                        className="rounded-xl"
+                        title={`Post #${i + 1} by @${competitorHandle}`}
+                      />
                     </div>
-                    <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Top post by engagement</span>
-                  </div>
-                  <a
-                    href={post.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-indigo-600 hover:text-indigo-800 font-medium shrink-0"
-                  >
-                    View →
-                  </a>
-                </div>
-
-                {/* Metrics */}
-                <div className="flex gap-3 flex-wrap">
-                  <Metric icon={<Heart className="w-3.5 h-3.5 text-rose-500" />} label={post.likesCount.toLocaleString()} sub="likes" />
-                  <Metric icon={<MessageSquare className="w-3.5 h-3.5 text-indigo-500" />} label={post.commentsCount.toLocaleString()} sub="comments" />
-                  {post.videoViewCount > 0 && (
-                    <Metric icon={<Eye className="w-3.5 h-3.5 text-slate-500" />} label={post.videoViewCount.toLocaleString()} sub="views" />
                   )}
-                  <Metric icon={<TrendingUp className="w-3.5 h-3.5 text-orange-500" />} label={Math.round(post.engagementScore).toLocaleString()} sub="score" />
-                </div>
 
-                {/* Caption */}
-                {post.caption && (
-                  <div className="bg-slate-50 rounded-lg p-3">
-                    <p className="text-xs text-slate-600 leading-relaxed line-clamp-4">{post.caption}</p>
-                  </div>
-                )}
-
-                {/* Comments sample */}
-                {post.comments.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold text-slate-500 mb-2">Sample comments ({post.comments.length} scraped)</p>
-                    <div className="space-y-1.5">
-                      {post.comments.slice(0, 5).map((c) => (
-                        <div key={c.id} className="flex items-start gap-2">
-                          <span className="text-xs font-medium text-slate-500 shrink-0">@{c.ownerUsername}:</span>
-                          <span className="text-xs text-slate-600 line-clamp-1">{c.text}</span>
+                  {/* Metrics and analysis */}
+                  <div className="flex-1 p-5 space-y-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center text-xs font-bold shrink-0">
+                          #{i + 1}
                         </div>
-                      ))}
-                      {post.comments.length > 5 && (
-                        <p className="text-xs text-slate-400">+{post.comments.length - 5} more comments analyzed</p>
-                      )}
+                        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Top post by engagement</span>
+                      </div>
+                      <a
+                        href={post.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-indigo-600 hover:text-indigo-800 font-medium shrink-0"
+                      >
+                        View on Instagram →
+                      </a>
                     </div>
+
+                    {/* Metrics */}
+                    <div className="flex gap-3 flex-wrap">
+                      <Metric icon={<Heart className="w-3.5 h-3.5 text-rose-500" />} label={post.likesCount.toLocaleString()} sub="likes" />
+                      <Metric icon={<MessageSquare className="w-3.5 h-3.5 text-indigo-500" />} label={post.commentsCount.toLocaleString()} sub="comments" />
+                      {post.videoViewCount > 0 && (
+                        <Metric icon={<Eye className="w-3.5 h-3.5 text-slate-500" />} label={post.videoViewCount.toLocaleString()} sub="views" />
+                      )}
+                      <Metric icon={<TrendingUp className="w-3.5 h-3.5 text-orange-500" />} label={Math.round(post.engagementScore).toLocaleString()} sub="score" />
+                    </div>
+
+                    {/* Caption */}
+                    {post.caption && (
+                      <div className="bg-slate-50 rounded-lg p-3">
+                        <p className="text-xs text-slate-600 leading-relaxed line-clamp-4">{post.caption}</p>
+                      </div>
+                    )}
+
+                    {/* Comments sample */}
+                    {post.comments.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold text-slate-500 mb-2">Sample comments ({post.comments.length} scraped)</p>
+                        <div className="space-y-1.5">
+                          {post.comments.slice(0, 5).map((c) => (
+                            <div key={c.id} className="flex items-start gap-2">
+                              <span className="text-xs font-medium text-slate-500 shrink-0">@{c.ownerUsername}:</span>
+                              <span className="text-xs text-slate-600 line-clamp-1">{c.text}</span>
+                            </div>
+                          ))}
+                          {post.comments.length > 5 && (
+                            <p className="text-xs text-slate-400">+{post.comments.length - 5} more comments analyzed</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── Tab: Reverse Engineering ── */}
+        {reportTab === 'reverse' && (
+          <div className="space-y-6">
+            {/* Content DNA */}
+            {report.contentDNA && (
+              <div className="bg-white rounded-xl border border-slate-200 p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <Layers className="w-4 h-4 text-violet-500" />
+                  <h2 className="text-sm font-semibold text-slate-700">Content DNA — @{competitorHandle}'s Repeatable Formula</h2>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-rose-50 rounded-xl p-4 border border-rose-100">
+                    <p className="text-xs font-semibold text-rose-700 uppercase tracking-wide mb-1">Dominant Hook Type</p>
+                    <p className="text-sm text-slate-800">{report.contentDNA.dominantHookType}</p>
+                  </div>
+                  <div className="bg-violet-50 rounded-xl p-4 border border-violet-100">
+                    <p className="text-xs font-semibold text-violet-700 uppercase tracking-wide mb-1">Emotional Arc</p>
+                    <p className="text-sm text-slate-800">{report.contentDNA.emotionalArc}</p>
+                  </div>
+                  <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
+                    <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">Pacing Pattern</p>
+                    <p className="text-sm text-slate-800">{report.contentDNA.pacingPattern}</p>
+                  </div>
+                  <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-100">
+                    <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wide mb-1">CTA Style</p>
+                    <p className="text-sm text-slate-800">{report.contentDNA.ctaStyle}</p>
+                  </div>
+                </div>
+                {report.contentDNA.uniqueFormula && (
+                  <div className="mt-4 bg-gradient-to-r from-violet-50 to-indigo-50 rounded-xl p-4 border border-violet-100">
+                    <p className="text-xs font-semibold text-violet-700 uppercase tracking-wide mb-1">Secret Sauce</p>
+                    <p className="text-sm text-slate-900 font-medium">{report.contentDNA.uniqueFormula}</p>
                   </div>
                 )}
               </div>
-            ))}
+            )}
+
+            {/* Hook-by-Hook Breakdowns */}
+            {(report.postBreakdowns?.length ?? 0) > 0 && (
+              <div className="space-y-4">
+                <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                  <Microscope className="w-4 h-4 text-orange-500" />
+                  Hook-by-Hook Breakdown
+                </h2>
+                {report.postBreakdowns!.map((breakdown, i) => (
+                  <div key={i} className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center text-xs font-bold shrink-0">
+                        #{breakdown.postIndex}
+                      </div>
+                      <p className="text-sm font-semibold text-slate-900">{breakdown.hookFormula}</p>
+                    </div>
+
+                    <div className="bg-slate-50 rounded-lg p-3 border-l-4 border-orange-400">
+                      <p className="text-xs font-semibold text-slate-500 mb-1">Opening Line</p>
+                      <p className="text-sm text-slate-800 italic">"{breakdown.hookText}"</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1.5">
+                          <Brain className="w-3.5 h-3.5 text-violet-500" />
+                          <span className="text-xs font-semibold text-slate-600">Psychological Trigger</span>
+                        </div>
+                        <p className="text-xs text-slate-600 leading-relaxed">{breakdown.psychologicalTrigger}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1.5">
+                          <Layers className="w-3.5 h-3.5 text-blue-500" />
+                          <span className="text-xs font-semibold text-slate-600">Structure Arc</span>
+                        </div>
+                        <p className="text-xs text-slate-600 leading-relaxed font-mono">{breakdown.structureArc}</p>
+                      </div>
+                    </div>
+
+                    <div className="bg-amber-50 rounded-lg p-3">
+                      <p className="text-xs font-semibold text-amber-700 mb-1">Why it worked</p>
+                      <p className="text-xs text-slate-700 leading-relaxed">{breakdown.whyItWorked}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Replication Formula */}
+            {report.replicationFormula && (
+              <div className="bg-gradient-to-br from-indigo-900 to-violet-900 rounded-xl p-6 text-white space-y-4">
+                <div className="flex items-center gap-2">
+                  <Code2 className="w-4 h-4 text-indigo-300" />
+                  <p className="text-xs font-semibold text-indigo-300 uppercase tracking-wide">Replication Formula</p>
+                </div>
+                <p className="text-xl font-bold">{report.replicationFormula.templateName}</p>
+                <div className="bg-white/10 rounded-xl p-4">
+                  <p className="text-sm font-mono text-indigo-100 leading-relaxed">{report.replicationFormula.template}</p>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-xs font-semibold text-indigo-300 mb-1">Adapted for your brand</p>
+                    <p className="text-sm text-indigo-100 leading-relaxed">{report.replicationFormula.adaptedForYourBrand}</p>
+                  </div>
+                  <div className="bg-white/10 rounded-xl p-4">
+                    <p className="text-xs font-semibold text-indigo-300 mb-2">Ready-to-use hook for your ICP</p>
+                    <p className="text-sm text-white font-medium italic">"{report.replicationFormula.exampleHook}"</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {!report.contentDNA && !report.postBreakdowns?.length && !report.replicationFormula && (
+              <div className="text-center py-14">
+                <div className="w-12 h-12 mx-auto bg-slate-100 rounded-2xl flex items-center justify-center mb-3">
+                  <Microscope className="w-6 h-6 text-slate-300" />
+                </div>
+                <p className="text-slate-500 font-medium text-sm">Reverse engineering not available</p>
+                <p className="text-slate-400 text-xs mt-1">Run a new analysis to unlock the full Content DNA breakdown.</p>
+              </div>
+            )}
           </div>
         )}
 
@@ -800,6 +967,3 @@ function Metric({ icon, label, sub }: { icon: React.ReactNode; label: string; su
   );
 }
 
-// Suppress unused import warnings for icons used conditionally
-void Calendar;
-void FlaskConical;
