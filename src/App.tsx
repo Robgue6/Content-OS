@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   LayoutDashboard, User, Grid3X3, CalendarDays, FlaskConical,
   Settings as SettingsIcon, Loader2, TrendingUp, LogOut,
-  ChevronLeft, ChevronRight, Menu, X, Telescope, Activity,
+  ChevronLeft, ChevronRight, Menu, X, Telescope, Activity, SplitSquareHorizontal,
 } from 'lucide-react';
 
 import Dashboard from './components/Dashboard';
@@ -26,7 +26,8 @@ import { supabase } from './lib/supabase';
 import * as db from './lib/db';
 import * as analytics from './lib/analytics';
 
-import type { AppState, NavTab, Post, Script, MatrixIdea, RoiCampaign, RoiEntry, BrandIdentity as BrandIdentityType, AppLanguage, ChatMessage, ShareLink, CompetitorReport, AgentAction } from './types';
+import type { AppState, NavTab, Post, Script, MatrixIdea, RoiCampaign, RoiEntry, BrandIdentity as BrandIdentityType, AppLanguage, ChatMessage, ShareLink, CompetitorReport, AgentAction, AbTest, AbTestResult } from './types';
+import AbTestLab from './components/AbTestLab';
 
 const DEFAULT_BRAND: BrandIdentityType = {
   icp: '',
@@ -35,7 +36,7 @@ const DEFAULT_BRAND: BrandIdentityType = {
   tone: '',
 };
 
-const NAV_ITEMS: { tab: NavTab; label: string; icon: React.ReactNode }[] = [
+const ALL_NAV_ITEMS: { tab: NavTab; label: string; icon: React.ReactNode; featureFlag?: 'ab' }[] = [
   { tab: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-[18px] h-[18px]" /> },
   { tab: 'identity', label: 'Brand', icon: <User className="w-[18px] h-[18px]" /> },
   { tab: 'matrix', label: 'Matrix', icon: <Grid3X3 className="w-[18px] h-[18px]" /> },
@@ -44,6 +45,7 @@ const NAV_ITEMS: { tab: NavTab; label: string; icon: React.ReactNode }[] = [
   { tab: 'roi', label: 'ROI', icon: <TrendingUp className="w-[18px] h-[18px]" /> },
   { tab: 'intel', label: 'Intel', icon: <Telescope className="w-[18px] h-[18px]" /> },
   { tab: 'hub', label: 'Agent Hub', icon: <Activity className="w-[18px] h-[18px]" /> },
+  { tab: 'ab', label: 'A/B Tests', icon: <SplitSquareHorizontal className="w-[18px] h-[18px]" />, featureFlag: 'ab' },
 ];
 
 export default function App() {
@@ -77,6 +79,9 @@ export default function App() {
   const [competitorReports, setCompetitorReports] = useState<CompetitorReport[]>([]);
   const [apifyApiKey, setApifyApiKeyState] = useState('');
   const [agentActions, setAgentActions] = useState<AgentAction[]>([]);
+  const [abTestingEnabled, setAbTestingEnabledState] = useState(false);
+  const [abTests, setAbTests] = useState<AbTest[]>([]);
+  const [abTestResults, setAbTestResults] = useState<AbTestResult[]>([]);
 
   // Identify / reset user in Amplitude on auth change
   useEffect(() => {
@@ -101,7 +106,9 @@ export default function App() {
       db.fetchShareLink(user.id),
       db.fetchCompetitorReports(user.id),
       db.fetchAgentActions(user.id),
-    ]).then(([profile, postsData, scriptsData, ideasData, campaignsData, entriesData, messagesData, shareLinkData, reportsData, agentActionsData]) => {
+      db.fetchAbTests(user.id),
+      db.fetchAbTestResults(user.id),
+    ]).then(([profile, postsData, scriptsData, ideasData, campaignsData, entriesData, messagesData, shareLinkData, reportsData, agentActionsData, abTestsData, abTestResultsData]) => {
       if (profile) {
         setBrandIdentity(profile.brand_identity && Object.keys(profile.brand_identity).length > 0
           ? profile.brand_identity as BrandIdentityType : DEFAULT_BRAND);
@@ -109,6 +116,7 @@ export default function App() {
         setContentTypes(profile.content_types.length > 0 ? profile.content_types : ['Tutorial', 'Story', 'Listicle', 'Hot Take']);
         setAiEnabledState(profile.ai_enabled);
         setAiAgentEnabledState(profile.ai_agent_enabled ?? false);
+        setAbTestingEnabledState(profile.ab_testing_enabled ?? false);
         setLanguageState((profile.language as AppLanguage) ?? 'en');
         setApifyApiKeyState(profile.apify_api_key ?? '');
       }
@@ -121,6 +129,8 @@ export default function App() {
       setShareLink(shareLinkData);
       setCompetitorReports(reportsData);
       setAgentActions(agentActionsData);
+      setAbTests(abTestsData);
+      setAbTestResults(abTestResultsData);
     }).finally(() => setDataLoading(false));
   }, [user]);
 
@@ -169,6 +179,10 @@ export default function App() {
     setAiAgentEnabledState(enabled);
     analytics.trackAiAgentToggled(enabled);
     if (user) await db.updateProfile(user.id, { ai_agent_enabled: enabled });
+  };
+  const setAbTestingEnabled = async (enabled: boolean) => {
+    setAbTestingEnabledState(enabled);
+    if (user) await db.updateProfile(user.id, { ab_testing_enabled: enabled });
   };
   const handleSendMessage = async (userContent: string) => {
     if (!user) return;
@@ -419,6 +433,35 @@ export default function App() {
     analytics.trackRoiEntryDeleted();
   };
 
+  // ── A/B Tests ─────────────────────────────────────────────────────────────
+  const addAbTest = async (t: Omit<AbTest, 'id' | 'createdAt'>) => {
+    if (!user) return;
+    const created = await db.insertAbTest(user.id, t);
+    if (created) setAbTests(prev => [created, ...prev]);
+  };
+  const updateAbTest = async (id: string, patch: Partial<Omit<AbTest, 'id' | 'createdAt'>>) => {
+    setAbTests(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t));
+    await db.updateAbTest(id, patch);
+  };
+  const deleteAbTest = async (id: string) => {
+    setAbTests(prev => prev.filter(t => t.id !== id));
+    setAbTestResults(prev => prev.filter(r => r.testId !== id));
+    await db.deleteAbTest(id);
+  };
+  const addAbTestResult = async (r: Omit<AbTestResult, 'id'>) => {
+    if (!user) return;
+    const created = await db.insertAbTestResult(user.id, r);
+    if (created) setAbTestResults(prev => [...prev, created]);
+  };
+  const updateAbTestResult = async (id: string, patch: Partial<Omit<AbTestResult, 'id' | 'testId' | 'variant'>>) => {
+    setAbTestResults(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r));
+    await db.updateAbTestResult(id, patch);
+  };
+  const deleteAbTestResult = async (id: string) => {
+    setAbTestResults(prev => prev.filter(r => r.id !== id));
+    await db.deleteAbTestResult(id);
+  };
+
   // ── Competitor Intel ──────────────────────────────────────────────────────
   const addCompetitorReport = async (report: Omit<CompetitorReport, 'id' | 'createdAt'>) => {
     if (!user) return;
@@ -466,8 +509,8 @@ export default function App() {
 
   const appState: AppState = {
     brandIdentity, themes, contentTypes, posts, scripts, matrixIdeas,
-    roiCampaigns, roiEntries, aiEnabled, aiAgentEnabled, language, activeTab,
-    scriptLabPostId, chatMessages, competitorReports, agentActions,
+    roiCampaigns, roiEntries, aiEnabled, aiAgentEnabled, abTestingEnabled, language, activeTab,
+    scriptLabPostId, chatMessages, competitorReports, agentActions, abTests, abTestResults,
   };
 
   // ── Derived ──────────────────────────────────────────────────────────────
@@ -508,7 +551,7 @@ export default function App() {
 
       {/* Nav items */}
       <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
-        {NAV_ITEMS.map(({ tab, label, icon }) => {
+        {ALL_NAV_ITEMS.filter(item => !item.featureFlag || (item.featureFlag === 'ab' && abTestingEnabled)).map(({ tab, label, icon }) => {
           const active = activeTab === tab && !showSettings;
           return (
             <button
@@ -657,6 +700,8 @@ export default function App() {
               onAiEnabledChange={setAiEnabled}
               aiAgentEnabled={aiAgentEnabled}
               onAiAgentEnabledChange={setAiAgentEnabled}
+              abTestingEnabled={abTestingEnabled}
+              onAbTestingEnabledChange={setAbTestingEnabled}
               language={language}
               onLanguageChange={setLanguage}
               userEmail={user?.email ?? ''}
@@ -762,6 +807,21 @@ export default function App() {
                   onUndoAction={undoAgentAction}
                   onNavigateToCalendar={() => navigate('calendar')}
                   onNavigateToMatrix={() => navigate('matrix')}
+                />
+              )}
+              {activeTab === 'ab' && abTestingEnabled && (
+                <AbTestLab
+                  posts={posts}
+                  scripts={scripts}
+                  brandIdentity={brandIdentity}
+                  abTests={abTests}
+                  abTestResults={abTestResults}
+                  onAddTest={addAbTest}
+                  onUpdateTest={updateAbTest}
+                  onDeleteTest={deleteAbTest}
+                  onAddResult={addAbTestResult}
+                  onUpdateResult={updateAbTestResult}
+                  onDeleteResult={deleteAbTestResult}
                 />
               )}
             </>

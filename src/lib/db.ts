@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import type { BrandIdentity, Post, Script, MatrixIdea, ChatMessage, ShareLink, CompetitorReport, CompetitorPost, CompetitorReportData, AgentAction, AgentActionType } from '../types';
+import type { BrandIdentity, Post, Script, MatrixIdea, ChatMessage, ShareLink, CompetitorReport, CompetitorPost, CompetitorReportData, AgentAction, AgentActionType, AbTest, AbTestResult, AbVariant, AbTestVariable, AbTestStatus } from '../types';
 
 // ── Profile ───────────────────────────────────────────────────────────────
 
@@ -10,6 +10,7 @@ export interface ProfileRow {
   content_types: string[];
   ai_enabled: boolean;
   ai_agent_enabled: boolean;
+  ab_testing_enabled: boolean;
   gemini_api_key: string | null;
   apify_api_key: string | null;
   language: string | null;
@@ -481,6 +482,130 @@ export async function insertCompetitorReport(
 export async function deleteCompetitorReport(id: string): Promise<void> {
   const { error } = await supabase.from('competitor_reports').delete().eq('id', id);
   if (error) console.error('deleteCompetitorReport', error);
+}
+
+// ── Shared Data (viewer, no auth required) ─────────────────────────────────
+
+// ── A/B Tests ──────────────────────────────────────────────────────────────
+
+type AbTestRow = {
+  id: string; user_id: string; name: string; hypothesis: string; variable: string;
+  variant_a: unknown; variant_b: unknown; post_id: string | null;
+  status: string; winner: string | null; winner_reason: string | null; created_at: string;
+};
+
+type AbTestResultRow = {
+  id: string; user_id: string; test_id: string; variant: string; posted_at: string;
+  views: number; likes: number; comments: number; shares: number; saves: number;
+  profile_visits: number; watch_time_seconds: number; follows: number; notes: string; created_at: string;
+};
+
+function rowToAbTest(row: AbTestRow): AbTest {
+  return {
+    id: row.id,
+    name: row.name,
+    hypothesis: row.hypothesis,
+    variable: row.variable as AbTestVariable,
+    variantA: row.variant_a as AbVariant,
+    variantB: row.variant_b as AbVariant,
+    postId: row.post_id,
+    status: row.status as AbTestStatus,
+    winner: row.winner as 'A' | 'B' | null,
+    winnerReason: row.winner_reason,
+    createdAt: row.created_at,
+  };
+}
+
+function rowToAbTestResult(row: AbTestResultRow): AbTestResult {
+  return {
+    id: row.id,
+    testId: row.test_id,
+    variant: row.variant as 'A' | 'B',
+    postedAt: row.posted_at,
+    views: row.views,
+    likes: row.likes,
+    comments: row.comments,
+    shares: row.shares,
+    saves: row.saves,
+    profileVisits: row.profile_visits,
+    watchTimeSeconds: row.watch_time_seconds,
+    follows: row.follows,
+    notes: row.notes,
+  };
+}
+
+export async function fetchAbTests(userId: string): Promise<AbTest[]> {
+  const { data, error } = await supabase.from('ab_tests').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+  if (error) { console.error('fetchAbTests', error); return []; }
+  return (data as AbTestRow[]).map(rowToAbTest);
+}
+
+export async function insertAbTest(userId: string, t: Omit<AbTest, 'id' | 'createdAt'>): Promise<AbTest | null> {
+  const { data, error } = await supabase.from('ab_tests').insert({
+    user_id: userId, name: t.name, hypothesis: t.hypothesis, variable: t.variable,
+    variant_a: t.variantA, variant_b: t.variantB, post_id: t.postId,
+    status: t.status, winner: t.winner, winner_reason: t.winnerReason,
+  }).select().single();
+  if (error) { console.error('insertAbTest', error); return null; }
+  return rowToAbTest(data as AbTestRow);
+}
+
+export async function updateAbTest(id: string, patch: Partial<Omit<AbTest, 'id' | 'createdAt'>>) {
+  const dbPatch: Record<string, unknown> = {};
+  if (patch.name !== undefined) dbPatch.name = patch.name;
+  if (patch.hypothesis !== undefined) dbPatch.hypothesis = patch.hypothesis;
+  if (patch.variable !== undefined) dbPatch.variable = patch.variable;
+  if (patch.variantA !== undefined) dbPatch.variant_a = patch.variantA;
+  if (patch.variantB !== undefined) dbPatch.variant_b = patch.variantB;
+  if (patch.postId !== undefined) dbPatch.post_id = patch.postId;
+  if (patch.status !== undefined) dbPatch.status = patch.status;
+  if ('winner' in patch) dbPatch.winner = patch.winner;
+  if ('winnerReason' in patch) dbPatch.winner_reason = patch.winnerReason;
+  const { error } = await supabase.from('ab_tests').update(dbPatch).eq('id', id);
+  if (error) console.error('updateAbTest', error);
+}
+
+export async function deleteAbTest(id: string) {
+  const { error } = await supabase.from('ab_tests').delete().eq('id', id);
+  if (error) console.error('deleteAbTest', error);
+}
+
+export async function fetchAbTestResults(userId: string): Promise<AbTestResult[]> {
+  const { data, error } = await supabase.from('ab_test_results').select('*').eq('user_id', userId).order('posted_at', { ascending: true });
+  if (error) { console.error('fetchAbTestResults', error); return []; }
+  return (data as AbTestResultRow[]).map(rowToAbTestResult);
+}
+
+export async function insertAbTestResult(userId: string, r: Omit<AbTestResult, 'id'>): Promise<AbTestResult | null> {
+  const { data, error } = await supabase.from('ab_test_results').insert({
+    user_id: userId, test_id: r.testId, variant: r.variant, posted_at: r.postedAt,
+    views: r.views, likes: r.likes, comments: r.comments, shares: r.shares,
+    saves: r.saves, profile_visits: r.profileVisits, watch_time_seconds: r.watchTimeSeconds,
+    follows: r.follows, notes: r.notes,
+  }).select().single();
+  if (error) { console.error('insertAbTestResult', error); return null; }
+  return rowToAbTestResult(data as AbTestResultRow);
+}
+
+export async function updateAbTestResult(id: string, patch: Partial<Omit<AbTestResult, 'id' | 'testId' | 'variant'>>) {
+  const dbPatch: Record<string, unknown> = {};
+  if (patch.postedAt !== undefined) dbPatch.posted_at = patch.postedAt;
+  if (patch.views !== undefined) dbPatch.views = patch.views;
+  if (patch.likes !== undefined) dbPatch.likes = patch.likes;
+  if (patch.comments !== undefined) dbPatch.comments = patch.comments;
+  if (patch.shares !== undefined) dbPatch.shares = patch.shares;
+  if (patch.saves !== undefined) dbPatch.saves = patch.saves;
+  if (patch.profileVisits !== undefined) dbPatch.profile_visits = patch.profileVisits;
+  if (patch.watchTimeSeconds !== undefined) dbPatch.watch_time_seconds = patch.watchTimeSeconds;
+  if (patch.follows !== undefined) dbPatch.follows = patch.follows;
+  if (patch.notes !== undefined) dbPatch.notes = patch.notes;
+  const { error } = await supabase.from('ab_test_results').update(dbPatch).eq('id', id);
+  if (error) console.error('updateAbTestResult', error);
+}
+
+export async function deleteAbTestResult(id: string) {
+  const { error } = await supabase.from('ab_test_results').delete().eq('id', id);
+  if (error) console.error('deleteAbTestResult', error);
 }
 
 // ── Shared Data (viewer, no auth required) ─────────────────────────────────

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Sparkles, LogOut, Languages, Link2, Check, Telescope, Eye, EyeOff } from 'lucide-react';
+import { Sparkles, LogOut, Languages, Link2, Check, Telescope, Eye, EyeOff, SplitSquareHorizontal } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import type { AppLanguage, ShareLink } from '../types';
 import * as analytics from '../lib/analytics';
@@ -15,6 +15,8 @@ interface Props {
   onAiEnabledChange: (enabled: boolean) => void;
   aiAgentEnabled: boolean;
   onAiAgentEnabledChange: (enabled: boolean) => void;
+  abTestingEnabled: boolean;
+  onAbTestingEnabledChange: (enabled: boolean) => void;
   language: AppLanguage;
   onLanguageChange: (lang: AppLanguage) => void;
   userEmail: string;
@@ -25,7 +27,7 @@ interface Props {
   onApifyApiKeyChange: (key: string) => Promise<void>;
 }
 
-export default function Settings({ aiEnabled, onAiEnabledChange, aiAgentEnabled, onAiAgentEnabledChange, language, onLanguageChange, userEmail, shareLink, onGenerateShareLink, onRevokeShareLink, apifyApiKey, onApifyApiKeyChange }: Props) {
+export default function Settings({ aiEnabled, onAiEnabledChange, aiAgentEnabled, onAiAgentEnabledChange, abTestingEnabled, onAbTestingEnabledChange, language, onLanguageChange, userEmail, shareLink, onGenerateShareLink, onRevokeShareLink, apifyApiKey, onApifyApiKeyChange }: Props) {
   const handleAiToggle = () => {
     const next = !aiEnabled;
     analytics.trackAiGenerationToggled(next);
@@ -193,6 +195,42 @@ export default function Settings({ aiEnabled, onAiEnabledChange, aiAgentEnabled,
           {aiAgentEnabled
             ? 'Content Agent is active — look for the chat button in the bottom-right corner'
             : 'Content Agent is hidden'}
+        </div>
+      </div>
+
+      {/* A/B Content Testing Feature Flag */}
+      <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <SplitSquareHorizontal className="w-4 h-4 text-emerald-500" />
+              <h2 className="text-sm font-semibold text-slate-700">A/B Content Testing</h2>
+            </div>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              When enabled, an A/B Tests tab appears in the navigation. Test hooks, CTAs, formats,
+              and angles head-to-head with real metrics and AI-powered winner analysis.
+            </p>
+          </div>
+          <button
+            onClick={() => onAbTestingEnabledChange(!abTestingEnabled)}
+            className={`relative shrink-0 w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 ${
+              abTestingEnabled ? 'bg-emerald-600' : 'bg-slate-200'
+            }`}
+            role="switch"
+            aria-checked={abTestingEnabled}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${
+                abTestingEnabled ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+        <div className={`flex items-center gap-2 text-xs font-medium px-3 py-2 rounded-lg ${
+          abTestingEnabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-50 text-slate-500'
+        }`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${abTestingEnabled ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+          {abTestingEnabled ? 'A/B Testing Lab is active — find it in the left navigation' : 'A/B Testing is hidden'}
         </div>
       </div>
 

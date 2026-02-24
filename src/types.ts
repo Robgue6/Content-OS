@@ -79,7 +79,7 @@ export interface ShareLink {
   createdAt: string;
 }
 
-export type NavTab = 'dashboard' | 'identity' | 'matrix' | 'calendar' | 'lab' | 'roi' | 'intel' | 'hub';
+export type NavTab = 'dashboard' | 'identity' | 'matrix' | 'calendar' | 'lab' | 'roi' | 'intel' | 'hub' | 'ab';
 
 export type AppLanguage = 'en' | 'es' | 'fr';
 
@@ -94,12 +94,55 @@ export interface AppState {
   roiEntries: RoiEntry[];
   aiEnabled: boolean;
   aiAgentEnabled: boolean;
+  abTestingEnabled: boolean;
   language: AppLanguage;
   activeTab: NavTab;
   scriptLabPostId: string | null;
   chatMessages: ChatMessage[];
   competitorReports: CompetitorReport[];
   agentActions: AgentAction[];
+  abTests: AbTest[];
+  abTestResults: AbTestResult[];
+}
+
+// ── A/B Testing ────────────────────────────────────────────────────────────
+
+export type AbTestVariable = 'hook' | 'cta' | 'type' | 'theme' | 'script';
+export type AbTestStatus = 'planning' | 'live' | 'completed';
+
+export interface AbVariant {
+  title: string;    // e.g. "Pain-first hook"
+  content: string;  // the actual text content being tested
+}
+
+export interface AbTest {
+  id: string;
+  name: string;
+  hypothesis: string;
+  variable: AbTestVariable;
+  variantA: AbVariant;
+  variantB: AbVariant;
+  postId: string | null;
+  status: AbTestStatus;
+  winner: 'A' | 'B' | null;
+  winnerReason: string | null;
+  createdAt: string;
+}
+
+export interface AbTestResult {
+  id: string;
+  testId: string;
+  variant: 'A' | 'B';
+  postedAt: string;
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  saves: number;
+  profileVisits: number;
+  watchTimeSeconds: number;
+  follows: number;
+  notes: string;
 }
 
 // ── Agent Actions ──────────────────────────────────────────────────────────
