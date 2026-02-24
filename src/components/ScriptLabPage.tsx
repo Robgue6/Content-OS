@@ -13,7 +13,7 @@ import * as analytics from '../lib/analytics';
 const LANGUAGE_NAMES: Record<AppLanguage, string> = { en: 'English', es: 'Spanish', fr: 'French' };
 
 type FilterMode = 'all' | 'needs' | 'done' | 'agent';
-type SortMode = 'date' | 'status' | 'theme';
+type SortMode = 'date' | 'status';
 type PreviewMode = 'read' | 'teleprompter' | 'schedule';
 
 interface ScriptSections { hook: string; body: string; cta: string; }
@@ -38,6 +38,7 @@ export default function ScriptLabPage({
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<FilterMode>('all');
   const [sort, setSort] = useState<SortMode>('date');
+  const [selectedTheme, setSelectedTheme] = useState<string | null>(null);
 
   // Editor state
   const [selectedPostId, setSelectedPostId] = useState<string | null>(initialPostId ?? null);
@@ -49,7 +50,7 @@ export default function ScriptLabPage({
 
   // Preview panel
   const [previewMode, setPreviewMode] = useState<PreviewMode>('read');
-  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(true);
 
   // Teleprompter
   const [playing, setPlaying] = useState(false);
@@ -128,6 +129,12 @@ export default function ScriptLabPage({
     setPlaying(false);
   }, [selectedPostId, existingScript?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Unique themes for theme filter chips
+  const uniqueThemes = useMemo(
+    () => [...new Set(posts.map(p => p.theme))].filter(Boolean).sort(),
+    [posts],
+  );
+
   // Filtered & sorted posts
   const filteredPosts = useMemo(() => {
     let list = posts.filter(p => {
@@ -137,24 +144,24 @@ export default function ScriptLabPage({
             !p.theme.toLowerCase().includes(q) &&
             !p.type.toLowerCase().includes(q)) return false;
       }
-      if (filter === 'needs') return !scriptByPostId.has(p.id);
-      if (filter === 'done')  return scriptByPostId.has(p.id);
-      if (filter === 'agent') return agentPostIds.has(p.id);
+      if (filter === 'needs') { if (scriptByPostId.has(p.id)) return false; }
+      else if (filter === 'done')  { if (!scriptByPostId.has(p.id)) return false; }
+      else if (filter === 'agent') { if (!agentPostIds.has(p.id)) return false; }
+      if (selectedTheme && p.theme !== selectedTheme) return false;
       return true;
     });
 
     list = [...list].sort((a, b) => {
       if (sort === 'date')   return (a.date ?? '').localeCompare(b.date ?? '');
       if (sort === 'status') {
-        const order = { IDEA: 0, DRAFT: 1, SCHEDULED: 2 };
+        const order: Record<string, number> = { IDEA: 0, DRAFT: 1, SCHEDULED: 2 };
         return (order[a.status] ?? 0) - (order[b.status] ?? 0);
       }
-      if (sort === 'theme')  return a.theme.localeCompare(b.theme);
       return 0;
     });
 
     return list;
-  }, [posts, scripts, search, filter, sort, agentPostIds, scriptByPostId]);
+  }, [posts, scripts, search, filter, sort, selectedTheme, agentPostIds, scriptByPostId]);
 
   // Stats
   const totalScripted = scripts.length;
@@ -239,20 +246,55 @@ export default function ScriptLabPage({
             <span className="text-sm font-bold text-slate-900">Script Lab</span>
           </div>
 
-          {/* Stats pills */}
+          {/* Filter pills — these ARE the filters */}
           <div className="flex items-center gap-1.5 flex-wrap mb-3">
-            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+            {/* All */}
+            <button
+              onClick={() => setFilter('all')}
+              className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border transition-colors ${
+                filter === 'all'
+                  ? 'bg-slate-800 text-white border-slate-800'
+                  : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400'
+              }`}
+            >
+              All {posts.length}
+            </button>
+            {/* Scripted */}
+            <button
+              onClick={() => setFilter('done')}
+              className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border transition-colors ${
+                filter === 'done'
+                  ? 'bg-emerald-600 text-white border-emerald-600'
+                  : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+              }`}
+            >
               {totalScripted} scripted
-            </span>
+            </button>
+            {/* Need scripts */}
             {totalNeed > 0 && (
-              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200">
+              <button
+                onClick={() => setFilter('needs')}
+                className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border transition-colors ${
+                  filter === 'needs'
+                    ? 'bg-rose-600 text-white border-rose-600'
+                    : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                }`}
+              >
                 {totalNeed} need scripts
-              </span>
+              </button>
             )}
+            {/* AI created */}
             {agentCount > 0 && (
-              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200">
+              <button
+                onClick={() => setFilter('agent')}
+                className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border transition-colors ${
+                  filter === 'agent'
+                    ? 'bg-violet-600 text-white border-violet-600'
+                    : 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100'
+                }`}
+              >
                 <Bot className="w-2.5 h-2.5 inline mr-0.5" />{agentCount} AI
-              </span>
+              </button>
             )}
           </div>
 
@@ -274,38 +316,32 @@ export default function ScriptLabPage({
           </div>
         </div>
 
-        {/* Filter tabs */}
-        <div className="flex border-b border-slate-200 bg-white">
-          {([
-            { id: 'all',   label: 'All',    count: posts.length },
-            { id: 'needs', label: 'Needed', count: totalNeed },
-            { id: 'done',  label: 'Done',   count: totalScripted },
-            { id: 'agent', label: 'AI',     count: agentCount },
-          ] as { id: FilterMode; label: string; count: number }[]).map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setFilter(tab.id)}
-              className={`flex-1 py-2 text-[11px] font-semibold transition-colors border-b-2 ${
-                filter === tab.id
-                  ? 'border-indigo-500 text-indigo-700 bg-indigo-50'
-                  : 'border-transparent text-slate-400 hover:text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              {tab.label}
-              {tab.count > 0 && (
-                <span className={`ml-1 text-[10px] ${filter === tab.id ? 'text-indigo-500' : 'text-slate-400'}`}>
-                  {tab.count}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
+        {/* Theme chips */}
+        {uniqueThemes.length > 0 && (
+          <div className="px-3 py-2 border-b border-slate-200 bg-white">
+            <div className="flex items-center gap-1 flex-wrap">
+              {uniqueThemes.map(theme => (
+                <button
+                  key={theme}
+                  onClick={() => setSelectedTheme(t => t === theme ? null : theme)}
+                  className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border transition-colors ${
+                    selectedTheme === theme
+                      ? 'bg-indigo-600 text-white border-indigo-600'
+                      : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-300 hover:text-indigo-600'
+                  }`}
+                >
+                  {theme}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Sort */}
         <div className="flex items-center gap-1.5 px-3 py-2 border-b border-slate-200 bg-white">
           <Filter className="w-3 h-3 text-slate-400" />
           <span className="text-[10px] text-slate-400 font-medium">Sort:</span>
-          {(['date', 'status', 'theme'] as SortMode[]).map(s => (
+          {(['date', 'status'] as SortMode[]).map(s => (
             <button
               key={s}
               onClick={() => setSort(s)}
@@ -722,6 +758,43 @@ const PreviewPanel = forwardRef<HTMLDivElement, {
       {/* Teleprompter */}
       {previewMode === 'teleprompter' && (
         <div className="flex-1 flex flex-col overflow-hidden bg-slate-900">
+          {/* Controls at the TOP for instant access */}
+          <div className="shrink-0 bg-slate-800 border-b border-slate-700 px-4 py-2.5">
+            {hasContent ? (
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={resetTeleprompter}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 transition-colors shrink-0"
+                  title="Reset to top"
+                >
+                  <SkipBack className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => {
+                    if (!playing) analytics.trackTeleprompterStarted(speed);
+                    setPlaying((p: boolean) => !p);
+                  }}
+                  className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold transition-colors shrink-0 ${
+                    playing ? 'bg-rose-500 hover:bg-rose-600 text-white' : 'bg-indigo-500 hover:bg-indigo-600 text-white'
+                  }`}
+                >
+                  {playing ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                  {playing ? 'Pause' : 'Start'}
+                </button>
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <span className="text-[10px] text-slate-400 shrink-0">Speed</span>
+                  <input
+                    type="range" min={1} max={10} value={speed}
+                    onChange={e => setSpeed(Number(e.target.value))}
+                    className="flex-1 accent-indigo-500 h-1 min-w-0"
+                  />
+                  <span className="text-[10px] text-slate-400 w-3 text-right shrink-0">{speed}</span>
+                </div>
+              </div>
+            ) : (
+              <p className="text-[11px] text-slate-500 text-center py-0.5">Write your script to use the teleprompter.</p>
+            )}
+          </div>
           <div
             ref={teleprompterRef}
             className="flex-1 overflow-y-auto px-6 py-8 scroll-smooth"
@@ -737,41 +810,11 @@ const PreviewPanel = forwardRef<HTMLDivElement, {
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-slate-500 text-center">
                 <Tv2 className="w-8 h-8 mb-3 opacity-40" />
-                <p className="text-xs">Write your script first.</p>
+                <p className="text-xs">No script yet.</p>
               </div>
             )}
             <div style={{ height: '80%' }} />
           </div>
-          {hasContent && (
-            <div className="shrink-0 bg-slate-800 border-t border-slate-700 px-4 py-3 space-y-2">
-              <div className="flex items-center gap-3">
-                <span className="text-[10px] text-slate-400 w-12">Speed</span>
-                <input
-                  type="range" min={1} max={10} value={speed}
-                  onChange={e => setSpeed(Number(e.target.value))}
-                  className="flex-1 accent-indigo-500 h-1"
-                />
-                <span className="text-[10px] text-slate-400 w-4 text-right">{speed}</span>
-              </div>
-              <div className="flex items-center justify-center gap-3">
-                <button onClick={resetTeleprompter} className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 transition-colors">
-                  <SkipBack className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => {
-                    if (!playing) analytics.trackTeleprompterStarted(speed);
-                    setPlaying((p: boolean) => !p);
-                  }}
-                  className={`flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                    playing ? 'bg-rose-500 hover:bg-rose-600 text-white' : 'bg-indigo-500 hover:bg-indigo-600 text-white'
-                  }`}
-                >
-                  {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                  {playing ? 'Pause' : 'Start'}
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       )}
 
