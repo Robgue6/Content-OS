@@ -3,7 +3,7 @@ import {
   ArrowLeft, Telescope, Search, Loader2, TrendingUp, MessageSquare,
   Heart, Eye, Plus, Trash2, CheckCircle, AlertCircle, Lightbulb,
   ChevronRight, BarChart2, Target, XCircle, Microscope, Code2, Brain, Layers,
-  Users, Hash, FileText, ChevronDown, ChevronUp,
+  Users, Hash, FileText, ChevronDown, ChevronUp, ImageOff, Play,
 } from 'lucide-react';
 import OpenAI from 'openai';
 import type {
@@ -305,6 +305,8 @@ export default function CompetitorIntel({
   const [commentAnalysisLoading, setCommentAnalysisLoading] = useState(false);
   const [commentAnalysisError, setCommentAnalysisError] = useState('');
   const [expandedScript, setExpandedScript] = useState<number | null>(null);
+  const [brokenImages, setBrokenImages] = useState<Set<string>>(new Set());
+  const [playingVideos, setPlayingVideos] = useState<Set<string>>(new Set());
 
   const noKey = !apifyApiKey;
 
@@ -739,28 +741,81 @@ export default function CompetitorIntel({
                 <div className="flex flex-col lg:flex-row">
                   {/* Post media — native video/image, no redirect */}
                   {(post.videoUrl || post.thumbnailUrl) ? (
-                    <div className="lg:w-80 shrink-0 bg-black border-b lg:border-b-0 lg:border-r border-slate-200 flex items-center justify-center overflow-hidden rounded-tl-xl rounded-bl-xl">
-                      {post.videoUrl ? (
-                        <video
-                          src={post.videoUrl}
-                          poster={post.thumbnailUrl}
-                          controls
-                          preload="metadata"
-                          className="w-full max-h-96 object-contain"
-                        />
-                      ) : (
-                        <img
-                          src={post.thumbnailUrl}
-                          alt={`Post #${i + 1} by @${competitorHandle}`}
-                          className="w-full max-h-96 object-cover"
-                        />
-                      )}
+                    <div className="lg:w-72 shrink-0 flex flex-col border-b lg:border-b-0 lg:border-r border-slate-200 overflow-hidden rounded-tl-xl rounded-bl-xl bg-slate-950">
+                      <div className="flex-1 flex items-center justify-center min-h-56">
+                        {post.videoUrl ? (
+                          playingVideos.has(post.id) ? (
+                            <video
+                              src={post.videoUrl}
+                              poster={post.thumbnailUrl}
+                              controls
+                              autoPlay
+                              playsInline
+                              className="w-full max-h-96 object-contain"
+                            />
+                          ) : post.thumbnailUrl && !brokenImages.has(post.id) ? (
+                            <div
+                              className="relative w-full cursor-pointer group"
+                              onClick={() => setPlayingVideos(prev => new Set([...prev, post.id]))}
+                            >
+                              <img
+                                src={post.thumbnailUrl}
+                                alt={`Post #${i + 1} thumbnail`}
+                                className="w-full max-h-96 object-cover"
+                                onError={() => setBrokenImages(prev => new Set([...prev, post.id]))}
+                              />
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/30 group-hover:bg-black/45 transition-colors">
+                                <div className="w-14 h-14 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center shadow-xl group-hover:scale-110 transition-transform duration-150">
+                                  <Play className="w-6 h-6 text-slate-900 ml-1" />
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <video
+                              src={post.videoUrl}
+                              controls
+                              playsInline
+                              preload="none"
+                              className="w-full max-h-96 object-contain"
+                            />
+                          )
+                        ) : !brokenImages.has(post.id) ? (
+                          <img
+                            src={post.thumbnailUrl}
+                            alt={`Post #${i + 1} by @${competitorHandle}`}
+                            className="w-full max-h-96 object-cover"
+                            onError={() => setBrokenImages(prev => new Set([...prev, post.id]))}
+                          />
+                        ) : (
+                          <div className="flex flex-col items-center justify-center gap-3 p-8 text-center w-full h-56">
+                            <div className="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center">
+                              <ImageOff className="w-6 h-6 text-slate-500" />
+                            </div>
+                            <div>
+                              <p className="text-xs font-medium text-slate-400">Image unavailable</p>
+                              <p className="text-xs text-slate-500 mt-0.5">CDN link may have expired</p>
+                            </div>
+                            <a
+                              href={post.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-orange-400 hover:text-orange-300 transition-colors"
+                            >
+                              View on Instagram ↗
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                      <div className="px-3 py-1.5 bg-slate-900 border-t border-slate-800 flex items-center gap-2">
+                        <span className="text-xs text-slate-400 capitalize font-medium">{post.type}</span>
+                        {post.videoUrl && <span className="text-xs text-slate-600 ml-auto">▶ video</span>}
+                      </div>
                     </div>
                   ) : post.shortCode ? (
-                    <div className="lg:w-80 shrink-0 bg-slate-50 border-b lg:border-b-0 lg:border-r border-slate-200 flex items-center justify-center p-4">
+                    <div className="lg:w-72 shrink-0 bg-slate-50 border-b lg:border-b-0 lg:border-r border-slate-200 flex items-center justify-center p-4">
                       <iframe
                         src={`https://www.instagram.com/p/${post.shortCode}/embed/`}
-                        width="300"
+                        width="280"
                         height="380"
                         style={{ border: 0 }}
                         className="rounded-xl"
