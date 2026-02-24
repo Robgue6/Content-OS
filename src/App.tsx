@@ -598,7 +598,7 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 flex">
+    <div className="h-screen overflow-hidden bg-slate-50 flex">
 
       {/* ── Mobile overlay backdrop ─────────────────────────────────────── */}
       {mobileOpen && (
@@ -630,7 +630,7 @@ export default function App() {
       </aside>
 
       {/* ── Main area ───────────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-screen">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
         {/* Mobile top bar */}
         <header className="md:hidden sticky top-0 z-30 bg-white border-b border-slate-200 flex items-center h-14 px-4 gap-3 shrink-0">

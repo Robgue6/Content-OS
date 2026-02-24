@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Search, Sparkles, Save, Loader2, Copy, CheckCheck, RotateCcw,
   Play, Pause, SkipBack, FileText, Maximize2, Minimize2,
@@ -24,6 +24,27 @@ interface AngleCard {
   hook: string;
   description: string;
   bestFor: string;
+}
+
+interface HookSuggestion {
+  hook: string;
+  principle: string;
+  principleEmoji: string;
+  why: string;
+}
+
+interface ScriptFix {
+  section: 'hook' | 'body' | 'cta';
+  original: string;
+  proposed: string;
+  reason: string;
+}
+
+interface ScriptReview {
+  score: number;
+  summary: string;
+  strengths: string[];
+  fixes: ScriptFix[];
 }
 
 interface Props {
@@ -61,6 +82,15 @@ export default function ScriptLabPage({
   const [anglesLoading, setAnglesLoading] = useState(false);
   const [angleCards, setAngleCards] = useState<AngleCard[]>([]);
   const [chosenAngle, setChosenAngle] = useState<AngleCard | null>(null);
+
+  // Hook generator
+  const [hooksLoading, setHooksLoading] = useState(false);
+  const [hookSuggestions, setHookSuggestions] = useState<HookSuggestion[]>([]);
+
+  // Script reviewer
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [review, setReview] = useState<ScriptReview | null>(null);
+  const [reviewStep, setReviewStep] = useState(0);
 
   // Preview panel
   const [previewMode, setPreviewMode] = useState<PreviewMode>('read');
@@ -144,6 +174,9 @@ export default function ScriptLabPage({
     setShowAnglePicker(false);
     setAngleCards([]);
     setChosenAngle(null);
+    setHookSuggestions([]);
+    setReview(null);
+    setReviewStep(0);
   }, [selectedPostId, existingScript?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Unique themes for theme filter chips
@@ -269,6 +302,63 @@ export default function ScriptLabPage({
   const handleAngleSkip = () => {
     setShowAnglePicker(false);
     generate();
+  };
+
+  const generateHooks = async () => {
+    if (!selectedPost) return;
+    const orKey = import.meta.env.VITE_OPENROUTER_API_KEY as string;
+    if (!orKey) { setError('OpenRouter API key is not configured.'); return; }
+    setHooksLoading(true); setHookSuggestions([]);
+    try {
+      const openai = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: orKey, dangerouslyAllowBrowser: true });
+      const response = await openai.chat.completions.create({
+        model: 'arcee-ai/trinity-large-preview:free',
+        messages: [
+          { role: 'system', content: 'You are an expert short-form content hook writer. Return ONLY valid JSON, no markdown.' },
+          { role: 'user', content: buildHooksPrompt(selectedPost, brandIdentity) },
+        ],
+        response_format: { type: 'json_object' },
+      });
+      const raw = response.choices[0].message.content ?? '{}';
+      const parsed = JSON.parse(raw);
+      setHookSuggestions((parsed.hooks ?? []).slice(0, 5) as HookSuggestion[]);
+    } catch (e) {
+      console.error(e);
+      setError('Hook generation failed. Try again.');
+    } finally { setHooksLoading(false); }
+  };
+
+  const reviewScript = async () => {
+    if (!selectedPost || !hasContent) return;
+    const orKey = import.meta.env.VITE_OPENROUTER_API_KEY as string;
+    if (!orKey) { setError('OpenRouter API key is not configured.'); return; }
+    setReviewLoading(true); setReview(null); setReviewStep(0);
+    try {
+      const openai = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: orKey, dangerouslyAllowBrowser: true });
+      const response = await openai.chat.completions.create({
+        model: 'arcee-ai/trinity-large-preview:free',
+        messages: [
+          { role: 'system', content: 'You are an elite short-form content editor. Return ONLY valid JSON, no markdown.' },
+          { role: 'user', content: buildReviewPrompt(selectedPost, sections, brandIdentity) },
+        ],
+        response_format: { type: 'json_object' },
+      });
+      const raw = response.choices[0].message.content ?? '{}';
+      const parsed = JSON.parse(raw) as ScriptReview;
+      setReview({
+        score: parsed.score ?? 5,
+        summary: parsed.summary ?? '',
+        strengths: parsed.strengths ?? [],
+        fixes: (parsed.fixes ?? []).slice(0, 5) as ScriptFix[],
+      });
+    } catch (e) {
+      console.error(e);
+      setError('Review failed. Try again.');
+    } finally { setReviewLoading(false); }
+  };
+
+  const applyReviewFix = (fix: ScriptFix) => {
+    setSections(prev => ({ ...prev, [fix.section]: fix.proposed }));
   };
 
   const handleSave = () => {
@@ -621,6 +711,17 @@ export default function ScriptLabPage({
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
                   </button>
+                  {/* Review button */}
+                  <button
+                    onClick={reviewScript}
+                    disabled={reviewLoading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-violet-700 border border-violet-200 bg-violet-50 hover:bg-violet-100 rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    {reviewLoading
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      : <Sparkles className="w-3.5 h-3.5" />}
+                    {reviewLoading ? 'Reviewing…' : 'Review Script'}
+                  </button>
                   {/* Progress dots */}
                   <div className="ml-auto flex items-center gap-1.5">
                     <span className="text-[10px] text-slate-400 font-medium">Sections:</span>
@@ -665,7 +766,28 @@ export default function ScriptLabPage({
                       onChange={v => setSections(p => ({ ...p, hook: v }))}
                       placeholder="Your opening line that makes people freeze mid-scroll…"
                       rows={3}
+                      headerRight={
+                        <button
+                          onClick={generateHooks}
+                          disabled={hooksLoading}
+                          className="flex items-center gap-1 text-[10px] font-bold text-rose-600 hover:text-rose-800 transition-colors disabled:opacity-50"
+                        >
+                          {hooksLoading
+                            ? <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                            : <Sparkles className="w-2.5 h-2.5" />}
+                          {hooksLoading ? 'Generating…' : hookSuggestions.length ? 'Refresh hooks' : 'Generate hooks'}
+                        </button>
+                      }
                     />
+                    {/* Hook suggestions panel */}
+                    {(hooksLoading || hookSuggestions.length > 0) && (
+                      <HookSuggestionsPanel
+                        loading={hooksLoading}
+                        suggestions={hookSuggestions}
+                        onApply={(h) => setSections(p => ({ ...p, hook: h }))}
+                        onClose={() => setHookSuggestions([])}
+                      />
+                    )}
                     <ScriptSection
                       label="Value Delivery"
                       sublabel="The core message — earn the watch"
@@ -734,6 +856,18 @@ export default function ScriptLabPage({
           </>
         )}
       </div>
+
+      {/* Script Review Modal */}
+      {review && (
+        <ScriptReviewModal
+          review={review}
+          step={reviewStep}
+          sections={sections}
+          onApply={applyReviewFix}
+          onNextStep={() => setReviewStep(s => s + 1)}
+          onClose={() => { setReview(null); setReviewStep(0); }}
+        />
+      )}
     </div>
   );
 }
@@ -1242,10 +1376,11 @@ function AngleCardsPanel({
 /* ─── Script Section ─────────────────────────────────────────────────────── */
 
 function ScriptSection({
-  label, sublabel, accent, value, onChange, placeholder, rows,
+  label, sublabel, accent, value, onChange, placeholder, rows, headerRight,
 }: {
   label: string; sublabel: string; accent: 'rose' | 'indigo' | 'emerald';
   value: string; onChange: (v: string) => void; placeholder: string; rows: number;
+  headerRight?: React.ReactNode;
 }) {
   const wordCount = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
   const wc = wordCount(value);
@@ -1258,14 +1393,15 @@ function ScriptSection({
 
   return (
     <div>
-      <div className="flex items-baseline justify-between mb-1.5">
+      <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-baseline gap-2">
           <span className={`text-[11px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${map.badge}`}>{label}</span>
           <span className="text-[11px] text-slate-400">{sublabel}</span>
         </div>
-        {wc > 0 && (
-          <span className="text-[10px] text-slate-400">{wc}w</span>
-        )}
+        <div className="flex items-center gap-2">
+          {headerRight}
+          {wc > 0 && <span className="text-[10px] text-slate-400">{wc}w</span>}
+        </div>
       </div>
       <textarea
         rows={rows}
@@ -1274,6 +1410,226 @@ function ScriptSection({
         placeholder={placeholder}
         className={`w-full px-3 py-2.5 rounded-xl border text-sm text-slate-900 placeholder-slate-400 resize-none focus:outline-none focus:ring-2 transition-shadow leading-relaxed ${map.border} ${map.ring}`}
       />
+    </div>
+  );
+}
+
+/* ─── Hook Suggestions Panel ─────────────────────────────────────────────── */
+
+function HookSuggestionsPanel({
+  loading, suggestions, onApply, onClose,
+}: {
+  loading: boolean;
+  suggestions: HookSuggestion[];
+  onApply: (hook: string) => void;
+  onClose: () => void;
+}) {
+  const principleColors: Record<string, string> = {
+    'Curiosity Gap':   'bg-amber-100 text-amber-800',
+    'Pain Agitation':  'bg-rose-100 text-rose-800',
+    'Contrarian':      'bg-purple-100 text-purple-800',
+    'Social Proof':    'bg-blue-100 text-blue-800',
+    'Identity Threat': 'bg-red-100 text-red-800',
+    'FOMO':            'bg-orange-100 text-orange-800',
+    'Pattern Break':   'bg-teal-100 text-teal-800',
+    'Vulnerability':   'bg-pink-100 text-pink-800',
+    'Specificity':     'bg-indigo-100 text-indigo-800',
+    'Open Loop':       'bg-violet-100 text-violet-800',
+  };
+
+  return (
+    <div className="rounded-xl border border-rose-200 bg-rose-50/60 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-rose-200 bg-rose-50">
+        <div className="flex items-center gap-2">
+          <Sparkles className="w-3.5 h-3.5 text-rose-500" />
+          <span className="text-[11px] font-black uppercase tracking-wider text-rose-700">
+            Psychology Hooks
+          </span>
+          {!loading && suggestions.length > 0 && (
+            <span className="text-[10px] text-rose-500">{suggestions.length} options — click to apply</span>
+          )}
+        </div>
+        {!loading && (
+          <button onClick={onClose} className="p-1 rounded hover:bg-rose-100 text-rose-400 hover:text-rose-700 transition-colors">
+            <X className="w-3 h-3" />
+          </button>
+        )}
+      </div>
+
+      {/* Content */}
+      <div className="divide-y divide-rose-100">
+        {loading ? (
+          Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="px-4 py-3 animate-pulse space-y-1.5">
+              <div className="h-2.5 bg-rose-200 rounded w-1/4" />
+              <div className="h-3 bg-rose-100 rounded w-full" />
+              <div className="h-2.5 bg-rose-100 rounded w-3/4" />
+            </div>
+          ))
+        ) : (
+          suggestions.map((s, i) => {
+            const colorClass = principleColors[s.principle] ?? 'bg-slate-100 text-slate-700';
+            return (
+              <div key={i} className="px-4 py-3 group hover:bg-white transition-colors">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0 space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">{s.principleEmoji}</span>
+                      <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full ${colorClass}`}>
+                        {s.principle}
+                      </span>
+                    </div>
+                    <p className="text-sm font-semibold text-slate-800 leading-snug">"{s.hook}"</p>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">{s.why}</p>
+                  </div>
+                  <button
+                    onClick={() => onApply(s.hook)}
+                    className="shrink-0 flex items-center gap-1 text-[10px] font-bold text-rose-700 border border-rose-300 bg-white hover:bg-rose-600 hover:text-white hover:border-rose-600 px-2.5 py-1 rounded-lg transition-colors mt-0.5"
+                  >
+                    Use <ArrowRight className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Script Review Modal ─────────────────────────────────────────────────── */
+
+function ScriptReviewModal({
+  review, step, sections, onApply, onNextStep, onClose,
+}: {
+  review: ScriptReview;
+  step: number;
+  sections: ScriptSections;
+  onApply: (fix: ScriptFix) => void;
+  onNextStep: () => void;
+  onClose: () => void;
+}) {
+  const done = step >= review.fixes.length;
+  const currentFix = !done ? review.fixes[step] : null;
+
+  const scoreColor = review.score >= 8 ? 'text-emerald-600 bg-emerald-50 border-emerald-200'
+    : review.score >= 6 ? 'text-amber-600 bg-amber-50 border-amber-200'
+    : 'text-rose-600 bg-rose-50 border-rose-200';
+
+  const sectionLabel = { hook: 'Hook', body: 'Value Delivery', cta: 'Call to Action' };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-violet-100 flex items-center justify-center">
+              <Sparkles className="w-4 h-4 text-violet-600" />
+            </div>
+            <div>
+              <p className="text-sm font-black text-slate-900">Script Review</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                {done
+                  ? 'All suggestions reviewed'
+                  : `Suggestion ${step + 1} of ${review.fixes.length}`}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {/* Score */}
+            <div className={`flex items-center gap-1 px-2.5 py-1 rounded-full border text-sm font-black ${scoreColor}`}>
+              {review.score}/10
+            </div>
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="px-5 py-4 space-y-4 max-h-[70vh] overflow-y-auto">
+          {/* Summary + Strengths — always visible */}
+          <div className="bg-slate-50 rounded-xl p-4 space-y-2">
+            <p className="text-sm font-semibold text-slate-800 leading-relaxed">"{review.summary}"</p>
+            {review.strengths.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {review.strengths.map((s, i) => (
+                  <span key={i} className="flex items-center gap-1 text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
+                    <CheckCheck className="w-2.5 h-2.5" />{s}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Current fix card */}
+          {!done && currentFix && (
+            <div className="border-2 border-violet-200 rounded-xl overflow-hidden">
+              <div className="px-4 py-2.5 bg-violet-50 border-b border-violet-200 flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase tracking-wider text-violet-700">
+                  Improve: {sectionLabel[currentFix.section]}
+                </span>
+              </div>
+              <div className="p-4 space-y-3">
+                {/* Before */}
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Before</p>
+                  <p className="text-sm text-slate-500 leading-relaxed bg-slate-50 rounded-lg px-3 py-2 border border-slate-200 italic">
+                    {currentFix.original || sections[currentFix.section] || '(empty)'}
+                  </p>
+                </div>
+                {/* After */}
+                <div>
+                  <p className="text-[10px] font-bold text-violet-600 uppercase tracking-wider mb-1">Proposed</p>
+                  <p className="text-sm text-slate-800 leading-relaxed font-medium bg-violet-50 rounded-lg px-3 py-2 border border-violet-200">
+                    {currentFix.proposed}
+                  </p>
+                </div>
+                {/* Why */}
+                <p className="text-[11px] text-slate-500 leading-relaxed bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                  <span className="font-bold text-amber-700">Why: </span>{currentFix.reason}
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center gap-2 px-4 pb-4">
+                <button
+                  onClick={() => { onApply(currentFix); onNextStep(); }}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold rounded-xl transition-colors"
+                >
+                  <CheckCheck className="w-4 h-4" /> Apply this change
+                </button>
+                <button
+                  onClick={onNextStep}
+                  className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold text-slate-500 hover:text-slate-800 border border-slate-200 hover:border-slate-300 rounded-xl transition-colors"
+                >
+                  Skip <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Done state */}
+          {done && (
+            <div className="text-center py-6 space-y-3">
+              <div className="w-12 h-12 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto">
+                <CheckCheck className="w-6 h-6 text-emerald-600" />
+              </div>
+              <p className="text-sm font-bold text-slate-800">All suggestions reviewed</p>
+              <p className="text-xs text-slate-500">Your script has been updated with the changes you applied.</p>
+              <button
+                onClick={onClose}
+                className="px-6 py-2.5 bg-slate-900 text-white text-sm font-bold rounded-xl hover:bg-slate-700 transition-colors"
+              >
+                Close review
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1321,6 +1677,89 @@ Respond ONLY with a valid JSON object (no markdown, no explanation):
   "body": "the core value delivery — insight, story, or tutorial steps",
   "cta": "the closing call to action"
 }`;
+}
+
+function buildHooksPrompt(post: Post, identity: BrandIdentity): string {
+  return `Generate exactly 5 DISTINCT, high-converting hooks for this short-form video post.
+
+POST TITLE: "${post.title}"
+FORMAT: ${post.type}
+THEME: ${post.theme}
+ICP: ${identity.icp || 'Not defined'}
+AUDIENCE PAINS: ${identity.empathyMap.pains || 'Not defined'}
+AUDIENCE HOPES: ${identity.empathyMap.hopes || 'Not defined'}
+VOICE & TONE: ${identity.tone || 'Not defined'}
+
+Each hook must use a DIFFERENT psychological principle. Choose from:
+- Pattern Interrupt: Breaks the viewer's autopilot scrolling with the unexpected
+- Curiosity Gap: Opens an information loop that demands to be closed
+- Social Proof: Leverages authority, numbers, or consensus
+- Fear of Missing Out (FOMO): Activates loss-aversion or urgency
+- Direct Challenge: Speaks directly to the viewer's identity or assumptions
+- Empathy Mirror: Reflects the viewer's exact frustration back at them
+- Contrarian Flip: Challenges a widely-held belief in the niche
+- Transformation Promise: Implies a before/after journey in one line
+
+Return ONLY this JSON (no markdown, no explanation):
+{
+  "hooks": [
+    {
+      "hook": "The full hook text — punchy, specific, max 2 sentences",
+      "principle": "Pattern Interrupt",
+      "principleEmoji": "⚡",
+      "why": "One sentence explaining why this hook works psychologically for this audience"
+    }
+  ]
+}`;
+}
+
+function buildReviewPrompt(post: Post, sections: ScriptSections, identity: BrandIdentity): string {
+  return `Review this short-form video script and provide structured optimization feedback.
+
+POST TITLE: "${post.title}"
+FORMAT: ${post.type}
+THEME: ${post.theme}
+ICP: ${identity.icp || 'Not defined'}
+AUDIENCE PAINS: ${identity.empathyMap.pains || 'Not defined'}
+AUDIENCE HOPES: ${identity.empathyMap.hopes || 'Not defined'}
+VOICE & TONE: ${identity.tone || 'Not defined'}
+
+CURRENT SCRIPT:
+[HOOK]
+${sections.hook || '(empty)'}
+
+[BODY]
+${sections.body || '(empty)'}
+
+[CTA]
+${sections.cta || '(empty)'}
+
+Evaluate on: scroll-stopping power, ICP relevance, tone match, clarity, and CTA strength.
+
+Return ONLY this JSON (no markdown, no explanation):
+{
+  "score": 78,
+  "summary": "One concise sentence summarizing the script's overall quality",
+  "strengths": [
+    "One specific strength",
+    "Another specific strength"
+  ],
+  "fixes": [
+    {
+      "section": "hook",
+      "original": "The exact text from the script that should change",
+      "proposed": "The improved replacement text",
+      "reason": "Why this change will perform better"
+    }
+  ]
+}
+
+Rules:
+- Score is 0-100 (be honest, not generous)
+- Include 2-3 strengths
+- Include 1-4 fixes only where genuinely needed (don't invent issues)
+- section must be "hook", "body", or "cta"
+- original must exactly match text from the script above`;
 }
 
 function buildAnglesPrompt(post: Post, identity: BrandIdentity): string {
